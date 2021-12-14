@@ -1,0 +1,36 @@
+{
+  "name": "dexter",
+  "version": "0.0.0",
+  "description": "Query any dex data directly on the blockchain",
+  "main": "index.js",
+  "scripts": {
+    "start": "node example.js",
+    "start:watch": "npm run dev",
+    "dev": "nodemon --exec \"npm start\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dherault/dexter.git"
+  },
+  "keywords": [
+    "blockchain",
+    "dex",
+    "defi"
+  ],
+  "author": "David Hérault <dherault@gmail.com> (https://github.com/dherault)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dherault/dexter/issues"
+  },
+  "homepage": "https://github.com/dherault/dexter#readme",
+  "dependencies": {
+    "ethers": "^5.5.2",
+    "ultimate-token-list": "^4.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^7.32.0",
+    "eslint-config-dherault": "^1.6.0",
+    "nodemon": "^2.0.15"
+  }
+}

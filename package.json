@@ -1,6 +1,6 @@
 {
   "name": "dexters",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Query any dex data directly on the blockchain",
   "main": "index.js",
   "scripts": {

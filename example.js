@@ -34,8 +34,9 @@ async function displayPairPrice(dexter, dexId, tokenSymbol0, tokenSymbol1) {
   const pairPrices = await dex.getPairPrices(pairAddress)
 
   console.log('pairPrices')
-  console.log('DAI', ethers.utils.formatEther(pairPrices[address0]))
-  console.log('WONE', ethers.utils.formatEther(pairPrices[address1]))
+  console.log(tokenSymbol0, ethers.utils.formatEther(pairPrices[address0]))
+  console.log(tokenSymbol1, ethers.utils.formatEther(pairPrices[address1]))
+  console.log('ratio', parseFloat(ethers.utils.formatEther(pairPrices[address0])) / parseFloat(ethers.utils.formatEther(pairPrices[address1])))
 }
 
 main()

@@ -26,7 +26,7 @@
   "homepage": "https://github.com/dherault/dexter#readme",
   "dependencies": {
     "ethers": "^5.5.2",
-    "ultimate-token-list": "^4.0.0"
+    "ultimate-token-list": "latest"
   },
   "devDependencies": {
     "eslint": "^7.32.0",

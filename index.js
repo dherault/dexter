@@ -1,11 +1,10 @@
 const { ethers } = require('ethers')
-const chainIdToChainMetadata = require('ultimate-token-list/data/chainIdToChainMetadata.json')
 
 class Dexter {
 
   constructor(chainId) {
     this.chainId = chainId
-    this.chainMetadata = chainIdToChainMetadata[chainId]
+    this.chainMetadata = require(`ultimate-token-list/data/blockchains/${chainId}.json`)
 
     if (!this.chainMetadata) {
       throw new Error(`Unsupported chainId: ${chainId}`)
@@ -13,13 +12,11 @@ class Dexter {
 
     this.provider = new ethers.providers.JsonRpcProvider(this.chainMetadata.rpc[0])
 
-    this.tokenSymbolToTokenInfo = {}
-    this.tokenAddressToTokenInfo = {}
-    this.tokens = require(`ultimate-token-list/data/tokens/${chainId}.json`)
+    this.tokenAddressToTokenMetadata = require(`ultimate-token-list/data/tokens/${chainId}.json`)
+    this.tokenSymbolToTokenMetadata = {}
 
-    this.tokens.forEach(tokenInfo => {
-      this.tokenSymbolToTokenInfo[tokenInfo.symbol] = tokenInfo
-      this.tokenAddressToTokenInfo[tokenInfo.address] = tokenInfo
+    Object.values(this.tokenAddressToTokenMetadata).forEach(tokenInfo => {
+      this.tokenSymbolToTokenMetadata[tokenInfo.symbol] = tokenInfo
     })
 
     this.dexIdToDex = {}
@@ -38,7 +35,7 @@ class Dexter {
   }
 
   getToken(symbolOrAddress) {
-    return this.tokenSymbolToTokenInfo[symbolOrAddress] || this.tokenAddressToTokenInfo[symbolOrAddress]
+    return this.tokenSymbolToTokenMetadata[symbolOrAddress] || this.tokenAddressToTokenMetadata[symbolOrAddress]
   }
 
 }
@@ -50,7 +47,7 @@ class Dex {
     this.dexId = dexId
     this.provider = provider
 
-    this.metadata = require(`ultimate-token-list/data/dexes/${dexId}/info.json`)
+    this.metadata = require(`ultimate-token-list/data/dexes/${dexId}/metadata.json`)
     this.contractNameToContractMetadata = require(`ultimate-token-list/data/dexes/${dexId}/contracts/${chainId}.json`)
 
     const pairFactoryContractInfo = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.factory]

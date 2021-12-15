@@ -12,23 +12,30 @@ async function main() {
 
   console.log('dexIds', dexIds)
 
-  const sushiswap = dexter.getDex('sushiswap')
+  await displayPairPrice(dexter, 'sushiswap', 'DAI', 'WONE')
+  await displayPairPrice(dexter, 'fatex', 'DAI', 'WONE')
+}
 
-  const dai = dexter.getToken('DAI').address
-  const wone = dexter.getToken('WONE').address
+async function displayPairPrice(dexter, dexId, tokenSymbol0, tokenSymbol1) {
+  const dex = dexter.getDex(dexId)
 
-  console.log('DAI', dai)
-  console.log('WONE', dai)
+  console.log('dex:', dexId)
 
-  const pairAddress = await sushiswap.getPairAddress(dai, wone)
+  const address0 = dexter.getToken(tokenSymbol0).address
+  const address1 = dexter.getToken(tokenSymbol1).address
+
+  // console.log(tokenSymbol0, address0)
+  // console.log(tokenSymbol1, address1)
+
+  const pairAddress = await dex.getPairAddress(address0, address1)
 
   console.log('pairAddress', pairAddress)
 
-  const pairPrices = await sushiswap.getPairPrices(pairAddress)
+  const pairPrices = await dex.getPairPrices(pairAddress)
 
   console.log('pairPrices')
-  console.log('DAI', ethers.utils.formatEther(pairPrices[dai]))
-  console.log('WONE', ethers.utils.formatEther(pairPrices[wone]))
+  console.log('DAI', ethers.utils.formatEther(pairPrices[address0]))
+  console.log('WONE', ethers.utils.formatEther(pairPrices[address1]))
 }
 
 main()

@@ -22,10 +22,10 @@ class Dexter {
       this.tokenAddressToTokenInfo[tokenInfo.address] = tokenInfo
     })
 
-    this._dexIdToDex = {}
+    this.dexIdToDex = {}
 
     this.getDexIds().forEach(dexId => {
-      this._dexIdToDex[dexId] = new Dex(chainId, dexId, this.provider)
+      this.dexIdToDex[dexId] = new Dex(chainId, dexId, this.provider)
     })
   }
 
@@ -34,15 +34,11 @@ class Dexter {
   }
 
   getDex(id) {
-    return this._dexIdToDex[id]
+    return this.dexIdToDex[id]
   }
 
   getToken(symbolOrAddress) {
     return this.tokenSymbolToTokenInfo[symbolOrAddress] || this.tokenAddressToTokenInfo[symbolOrAddress]
-  }
-
-  createDex(dexId) {
-
   }
 
 }
@@ -72,12 +68,11 @@ class Dex {
 
     const token0 = await pairContract.token0()
     const token1 = await pairContract.token1()
-    const price0CumulativeLast = await pairContract.price0CumulativeLast()
-    const price1CumulativeLast = await pairContract.price1CumulativeLast()
+    const { _reserve0, _reserve1 } = await pairContract.getReserves()
 
     return {
-      [token0]: price0CumulativeLast,
-      [token1]: price1CumulativeLast,
+      [token0]: _reserve0,
+      [token1]: _reserve1,
     }
   }
 

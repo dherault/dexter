@@ -4,6 +4,9 @@ const Dexter = require('.')
 
 async function main() {
   const dexter = new Dexter(1666600000) // Harmony mainnet
+  const currencySymbol = dexter.chainMetadata.nativeCurrency.symbol
+
+  console.log('currencySymbol', currencySymbol)
 
   const dexIds = dexter.getDexIds()
 

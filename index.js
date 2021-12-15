@@ -1,6 +1,6 @@
 const { ethers } = require('ethers')
 
-class Dexter {
+class Dexters {
 
   constructor(chainId) {
     this.chainId = chainId
@@ -22,7 +22,7 @@ class Dexter {
     this.dexIdToDex = {}
 
     this.getDexIds().forEach(dexId => {
-      this.dexIdToDex[dexId] = new Dex(chainId, dexId, this.provider)
+      this.dexIdToDex[dexId] = new Dex(this, chainId, dexId)
     })
   }
 
@@ -38,21 +38,43 @@ class Dexter {
     return this.tokenSymbolToTokenMetadata[symbolOrAddress] || this.tokenAddressToTokenMetadata[symbolOrAddress]
   }
 
+  getCrossTokens(dex0, dex1) {
+    const tokensAddresses0 = new Set(Object.keys(dex0.tokenAddressToTokenMetadata))
+    const tokensAddresses1 = new Set(Object.keys(dex1.tokenAddressToTokenMetadata))
+
+    const commonTokenAddresses = new Set([...tokensAddresses0].filter(x => tokensAddresses1.has(x)))
+
+    const tokenAddressTokenMetadata = {}
+
+    commonTokenAddresses.forEach(tokenAddress => {
+      tokenAddressTokenMetadata[tokenAddress] = dex0.tokenAddressToTokenMetadata[tokenAddress]
+    })
+
+    return tokenAddressTokenMetadata
+  }
+
 }
 
 class Dex {
 
-  constructor(chainId, dexId, provider) {
+  constructor(dexters, chainId, dexId) {
     this.chainId = chainId
     this.dexId = dexId
-    this.provider = provider
+    this.dexters = dexters
 
     this.metadata = require(`ultimate-token-list/data/dexes/${dexId}/metadata.json`)
     this.contractNameToContractMetadata = require(`ultimate-token-list/data/dexes/${dexId}/contracts/${chainId}.json`)
 
     const pairFactoryContractInfo = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.factory]
 
-    this.pairFactoryContract = new ethers.Contract(pairFactoryContractInfo.address, pairFactoryContractInfo.abi, provider)
+    this.pairFactoryContract = new ethers.Contract(pairFactoryContractInfo.address, pairFactoryContractInfo.abi, this.dexters.provider)
+
+    this.tokenAddressToTokenMetadata = require(`ultimate-token-list/data/dexes/${dexId}/tokens/${chainId}.json`)
+    this.tokenSymbolToTokenMetadata = {}
+
+    Object.values(this.tokenAddressToTokenMetadata).forEach(tokenInfo => {
+      this.tokenSymbolToTokenMetadata[tokenInfo.symbol] = tokenInfo
+    })
   }
 
   async getPairAddress(tokenAdress0, tokenAdress1) {
@@ -61,7 +83,7 @@ class Dex {
 
   async getPairPrices(pairAddress) {
     const pairContractInfo = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.pair]
-    const pairContract = new ethers.Contract(pairAddress, pairContractInfo.abi, this.provider)
+    const pairContract = new ethers.Contract(pairAddress, pairContractInfo.abi, this.dexters.provider)
 
     const token0 = await pairContract.token0()
     const token1 = await pairContract.token1()
@@ -73,6 +95,10 @@ class Dex {
     }
   }
 
+  getToken(symbolOrAddress) {
+    return this.tokenSymbolToTokenMetadata[symbolOrAddress] || this.tokenAddressToTokenMetadata[symbolOrAddress]
+  }
+
 }
 
-module.exports = Dexter
+module.exports = Dexters

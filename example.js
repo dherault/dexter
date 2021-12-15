@@ -1,9 +1,9 @@
 const { ethers } = require('ethers')
 
-const Dexter = require('.')
+const Dexters = require('.')
 
 async function main() {
-  const dexter = new Dexter(1666600000) // Harmony mainnet
+  const dexter = new Dexters(1666600000) // Harmony mainnet
   const currencySymbol = dexter.chainMetadata.nativeCurrency.symbol
 
   console.log('currencySymbol', currencySymbol)
@@ -12,8 +12,12 @@ async function main() {
 
   console.log('dexIds', dexIds)
 
-  await displayPairPrice(dexter, 'sushiswap', 'DAI', 'WONE')
-  await displayPairPrice(dexter, 'fatex', 'DAI', 'WONE')
+  const dex0 = await displayPairPrice(dexter, 'sushiswap', 'DAI', 'WONE')
+  const dex1 = await displayPairPrice(dexter, 'fatex', 'DAI', 'WONE')
+
+  const crossTokens = dexter.getCrossTokens(dex0, dex1)
+
+  console.log('crossTokens', Object.values(crossTokens).map(x => x.symbol))
 }
 
 async function displayPairPrice(dexter, dexId, tokenSymbol0, tokenSymbol1) {
@@ -24,19 +28,17 @@ async function displayPairPrice(dexter, dexId, tokenSymbol0, tokenSymbol1) {
   const address0 = dexter.getToken(tokenSymbol0).address
   const address1 = dexter.getToken(tokenSymbol1).address
 
-  // console.log(tokenSymbol0, address0)
-  // console.log(tokenSymbol1, address1)
-
   const pairAddress = await dex.getPairAddress(address0, address1)
 
   console.log('pairAddress', pairAddress)
 
   const pairPrices = await dex.getPairPrices(pairAddress)
 
-  console.log('pairPrices')
   console.log(tokenSymbol0, ethers.utils.formatEther(pairPrices[address0]))
   console.log(tokenSymbol1, ethers.utils.formatEther(pairPrices[address1]))
   console.log('ratio', parseFloat(ethers.utils.formatEther(pairPrices[address0])) / parseFloat(ethers.utils.formatEther(pairPrices[address1])))
+
+  return dex
 }
 
 main()

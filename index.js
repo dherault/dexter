@@ -4,7 +4,7 @@ class Dexters {
 
   constructor(chainId) {
     this.chainId = chainId
-    this.chainMetadata = require(`ultimate-token-list/data/blockchains/${chainId}.json`)
+    this.chainMetadata = require(`ultimate-token-list/data/blockchains/${chainId}/metadata.json`)
 
     if (!this.chainMetadata) {
       throw new Error(`Unsupported chainId: ${chainId}`)
@@ -12,7 +12,8 @@ class Dexters {
 
     this.provider = new ethers.providers.JsonRpcProvider(this.chainMetadata.rpc[0])
 
-    this.tokenAddressToTokenMetadata = require(`ultimate-token-list/data/tokens/${chainId}.json`)
+    this.tokenAddressToTokenMetadata = require(`ultimate-token-list/data/blockchains/${chainId}/tokens.json`)
+    this.stablecoinAddressToStablecoinMetadata = require(`ultimate-token-list/data/blockchains/${chainId}/stablecoins.json`)
     this.tokenSymbolToTokenMetadata = {}
 
     Object.values(this.tokenAddressToTokenMetadata).forEach(tokenInfo => {
@@ -38,7 +39,9 @@ class Dexters {
     return this.tokenSymbolToTokenMetadata[symbolOrAddress] || this.tokenAddressToTokenMetadata[symbolOrAddress]
   }
 
-  getCrossTokens(dex0, dex1) {
+  getCrossTokens(dexId0, dexId1) {
+    const dex0 = this.getDex(dexId0)
+    const dex1 = this.getDex(dexId1)
     const tokensAddresses0 = new Set(Object.keys(dex0.tokenAddressToTokenMetadata))
     const tokensAddresses1 = new Set(Object.keys(dex1.tokenAddressToTokenMetadata))
 
@@ -69,6 +72,7 @@ class Dex {
 
     this.pairFactoryContract = new ethers.Contract(pairFactoryContractInfo.address, pairFactoryContractInfo.abi, this.dexters.provider)
 
+    this.stablecoinAddressToStablecoinMetadata = require(`ultimate-token-list/data/dexes/${dexId}/stablecoins/${chainId}.json`)
     this.tokenAddressToTokenMetadata = require(`ultimate-token-list/data/dexes/${dexId}/tokens/${chainId}.json`)
     this.tokenSymbolToTokenMetadata = {}
 

@@ -12,10 +12,10 @@ async function main() {
 
   console.log('dexIds', dexIds)
 
-  const dex0 = await displayPairPrice(dexter, 'sushiswap', 'DAI', 'WONE')
-  const dex1 = await displayPairPrice(dexter, 'fatex', 'DAI', 'WONE')
+  await displayPairPrice(dexter, 'sushiswap', 'DAI', 'WONE')
+  await displayPairPrice(dexter, 'fatex', 'DAI', 'WONE')
 
-  const crossTokens = dexter.getCrossTokens(dex0, dex1)
+  const crossTokens = dexter.getCrossTokens('sushiswap', 'fatex')
 
   console.log('crossTokens', Object.values(crossTokens).map(x => x.symbol))
 }

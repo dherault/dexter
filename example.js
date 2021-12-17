@@ -12,33 +12,21 @@ async function main() {
 
   console.log('dexIds', dexIds)
 
-  await displayPairPrice(dexter, 'sushiswap', 'DAI', 'WONE')
-  await displayPairPrice(dexter, 'fatex', 'DAI', 'WONE')
+  const sushiswap = dexter.getDex('sushiswap')
+  const pairAddresses = await sushiswap.getAllPairAddresses()
 
-  const crossTokens = dexter.getCrossTokens('sushiswap', 'fatex')
+  // console.log('pairAddresses', pairAddresses)
 
-  console.log('crossTokens', Object.values(crossTokens).map(x => x.symbol))
-}
+  pairAddresses.forEach(pairAddress => {
+    sushiswap.listenToPair(pairAddress)
+  })
+  // const sushi = sushiswap.getToken('SUSHI').address
+  // const usdt = sushiswap.getToken('USDT').address
+  // const pairAddress = await sushiswap.getPairAddress(sushi, usdt)
+  // console.log('pairAddress', pairAddress)
 
-async function displayPairPrice(dexter, dexId, tokenSymbol0, tokenSymbol1) {
-  const dex = dexter.getDex(dexId)
-
-  console.log('dex:', dexId)
-
-  const address0 = dexter.getToken(tokenSymbol0).address
-  const address1 = dexter.getToken(tokenSymbol1).address
-
-  const pairAddress = await dex.getPairAddress(address0, address1)
-
-  console.log('pairAddress', pairAddress)
-
-  const pairPrices = await dex.getPairPrices(pairAddress)
-
-  console.log(tokenSymbol0, ethers.utils.formatEther(pairPrices[address0]))
-  console.log(tokenSymbol1, ethers.utils.formatEther(pairPrices[address1]))
-  console.log('ratio', parseFloat(ethers.utils.formatEther(pairPrices[address0])) / parseFloat(ethers.utils.formatEther(pairPrices[address1])))
-
-  return dex
+  // const price = await sushiswap.getTokenPrice()
+  // console.log('SUSHI', price)
 }
 
 main()

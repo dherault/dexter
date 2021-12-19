@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/dherault/dexter#readme",
   "dependencies": {
+    "bignumber.js": "^9.0.2",
     "ethers": "^5.5.2",
     "ultimate-token-list": "latest"
   },

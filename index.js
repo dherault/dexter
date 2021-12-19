@@ -1,6 +1,8 @@
 const { ethers } = require('ethers')
+const BigNumber = require('bignumber.js')
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
+const K = new BigNumber(10 ** 12)
 
 class Dexters {
 
@@ -89,15 +91,17 @@ class Dex {
     this.pairAddressToPriceData = {}
   }
 
-  getPairContract(pairAddress) {
-    if (this.pairAddressToContract[pairAddress]) {
-      return this.pairAddressToContract[pairAddress]
-    }
+  /* ---
+    TOKENS
+  --- */
 
-    const pairContractMetadata = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.pair]
-
-    return this.pairAddressToContract[pairAddress] = new ethers.Contract(pairAddress, pairContractMetadata.abi, this.dexters.provider)
+  getToken(symbolOrAddress) {
+    return this.tokenSymbolToTokenMetadata[symbolOrAddress] || this.tokenAddressToTokenMetadata[symbolOrAddress]
   }
+
+  /* ---
+    PAIRS
+  --- */
 
   registerPair(tokenAddress0, tokenAddress1, pairAddress) {
     this.pairAddressToTokenAddresses[pairAddress] = [tokenAddress0, tokenAddress1]
@@ -160,22 +164,34 @@ class Dex {
     .filter(pairAddress => pairAddress !== zeroAddress)
   }
 
-  async getPairReserves(pairAddress) {
+  async getPairTokenAddressesFromContract(pairAddress) {
     const pairContract = this.getPairContract(pairAddress)
 
     const [
       token0,
       token1,
-      { _reserve0, _reserve1 },
     ] = await Promise.all([
       pairContract.token0(),
       pairContract.token1(),
+    ])
+
+    return { token0, token1 }
+  }
+
+  async getPairReserves(pairAddress) {
+    const pairContract = this.getPairContract(pairAddress)
+
+    const [
+      { token0, token1 },
+      { _reserve0, _reserve1 },
+    ] = await Promise.all([
+      this.getPairTokenAddressesFromContract(pairAddress),
       pairContract.getReserves(),
     ])
 
     return {
-      [token0]: _reserve0,
-      [token1]: _reserve1,
+      [token0]: new BigNumber(_reserve0.toString()),
+      [token1]: new BigNumber(_reserve1.toString()),
     }
   }
 
@@ -183,52 +199,38 @@ class Dex {
     const pairContract = this.getPairContract(pairAddress)
 
     const [
-      token0,
-      token1,
+      { token0, token1 },
       priceCumulative0,
       priceCumulative1,
     ] = await Promise.all([
-      pairContract.token0(),
-      pairContract.token1(),
+      this.getPairTokenAddressesFromContract(pairAddress),
       pairContract.price0CumulativeLast(),
       pairContract.price1CumulativeLast(),
     ])
 
     return {
-      [token0]: priceCumulative0,
-      [token1]: priceCumulative1,
+      [token0]: new BigNumber(priceCumulative0.toString()),
+      [token1]: new BigNumber(priceCumulative1.toString()),
     }
   }
 
-  async getTokenPrice(tokenAddress) {
-    const { wrappedNativeTokenAddress } = this.dexters.chainMetadata
+  /* ---
+    CONTRACTS
+  --- */
 
-    if (!wrappedNativeTokenAddress) {
-      throw new Error(`Unsupported chainId: ${this.chainId}`)
+  getPairContract(pairAddress) {
+    if (this.pairAddressToContract[pairAddress]) {
+      return this.pairAddressToContract[pairAddress]
     }
 
-    const entries = Object.entries(this.stablecoinAddressToStablecoinMetadata)
-    const pairReservesPromises = entries.map(([stablecoinAddress]) => (
-      this.getPairAddress(wrappedNativeTokenAddress, stablecoinAddress)
-      .then(pairAddress => this.getPairReserves(pairAddress))
-    ))
+    const pairContractMetadata = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.pair]
 
-    const pairsReserves = await Promise.all(pairReservesPromises)
-
-    const weightedSum = ethers.BigNumber.from(0)
-    let totalLiquidity = ethers.BigNumber.from(0)
-
-    for (let i = 0; i < entries.length; i++) {
-      const [stablecoinAddress] = entries[i]
-      const { [stablecoinAddress]: reserve } = pairsReserves[i] // 0 or  1 ?
-
-      totalLiquidity = totalLiquidity.plus(reserve)
-    }
+    return this.pairAddressToContract[pairAddress] = new ethers.Contract(pairAddress, pairContractMetadata.abi, this.dexters.provider)
   }
 
-  getToken(symbolOrAddress) {
-    return this.tokenSymbolToTokenMetadata[symbolOrAddress] || this.tokenAddressToTokenMetadata[symbolOrAddress]
-  }
+  /* ---
+    ORACLE
+  --- */
 
   async addPriceListener(tokenAddress, callback) {
     const stablecoinAddresses = Object.keys(this.stablecoinAddressToStablecoinMetadata)
@@ -278,7 +280,7 @@ class Dex {
     return unlistener
   }
 
-  async processSyncEvent(pairAddress, event, reserve0, reserve1) {
+  async processSyncEvent(pairAddress, event, xReserve0, xReserve1) {
     console.log('sync event')
     const [tokenAddress0, tokenAddress1] = this.getPairTokenAddresses(pairAddress)
 
@@ -301,16 +303,17 @@ class Dex {
       this.pairAddressToPriceData[pairAddress] = []
     }
 
+    const reserve0 = new BigNumber(xReserve0.toString())
+    const reserve1 = new BigNumber(xReserve1.toString())
     const lastDataPoint = this.pairAddressToPriceData[pairAddress][this.pairAddressToPriceData[pairAddress].length - 1]
-    const dataPoint = {
+
+    this.pairAddressToPriceData[pairAddress].push({
       timestamp,
       reserve0,
       reserve1,
       priceCumulative0,
       priceCumulative1,
-    }
-
-    this.pairAddressToPriceData[pairAddress].push(dataPoint)
+    })
 
     if (!lastDataPoint || timestamp === lastDataPoint.timestamp) return null
 
@@ -318,11 +321,11 @@ class Dex {
       timestamp,
       [tokenAddress0]: {
         reserve: reserve0,
-        timeWeightedAveragePrice: (priceCumulative0.sub(lastDataPoint.priceCumulative0)).div(timestamp - lastDataPoint.timestamp),
+        timeWeightedAveragePrice: (priceCumulative0.minus(lastDataPoint.priceCumulative0)).div(timestamp - lastDataPoint.timestamp),
       },
       [tokenAddress1]: {
         reserve: reserve1,
-        timeWeightedAveragePrice: (priceCumulative1.sub(lastDataPoint.priceCumulative1)).div(timestamp - lastDataPoint.timestamp),
+        timeWeightedAveragePrice: (priceCumulative1.minus(lastDataPoint.priceCumulative1)).div(timestamp - lastDataPoint.timestamp),
       },
     }
   }
@@ -346,32 +349,34 @@ class Dex {
         [tokenAddress1]: { reserve: reserve1, timeWeightedAveragePrice: timeWeightedAveragePrice1 },
       } = syncEventData
 
-      console.log('stablecoin:', stablecoinSymbol)
-      // console.log('reserve0', ethers.utils.formatEther(reserve0))
-      // console.log('reserve1', ethers.utils.formatEther(reserve1))
-      // console.log('timeWeightedAveragePrice0', ethers.utils.formatEther(timeWeightedAveragePrice0))
-      // console.log('timeWeightedAveragePrice1', ethers.utils.formatEther(timeWeightedAveragePrice1))
-      const x0 = timeWeightedAveragePrice1.mul(reserve0)
-      const x1 = timeWeightedAveragePrice0.mul(reserve1)
+      /*
+        x0 = p1 * r0
+        x1 = p0 * r1
+        P / K = x1 / x0 = (p0 * r1) / (p1 * r0)
+        */
+      console.log('stablecoin', stablecoinSymbol)
 
-      // console.log('x0', ethers.utils.formatEther(x0))
-      // console.log('x1', ethers.utils.formatEther(x1))
-      try {
-        console.log('token price:', ethers.utils.formatEther(x0.div(x1).mul(10 ** 6)))
-        // console.log('r1', ethers.utils.formatEther(x1.div(x0).mul(10 ** 6)))
+      if (isToken0 && timeWeightedAveragePrice1.gt(0) && reserve0.gt(0)) {
+        callback({
+          timestamp,
+          price: K.times(timeWeightedAveragePrice0).times(reserve1).div(timeWeightedAveragePrice1).div(reserve0),
+        })
       }
-      catch (error) {
-        console.log('div 0')
+      if (!isToken0 && timeWeightedAveragePrice0.gt(0) && reserve1.gt(0)) {
+        callback({
+          timestamp,
+          price: K.times(timeWeightedAveragePrice1).times(reserve0).div(timeWeightedAveragePrice0).div(reserve1),
+        })
       }
-      // const relativePrice = isToken0 ? timeWeightedAveragePrice1 : timeWeightedAveragePrice0
-      // const reserveRatio = isToken0 ? reserve1.div(reserve0) : reserve0.div(reserve1)
-
-      return callback({
-        timestamp,
-        price: 0,
-        relativePrice: 0,
-      })
     }
+  }
+
+  /* ---
+    LIFECYCLE
+  --- */
+
+  startListeningToWrappedCurrencyPriceUpdates() {
+
   }
 }
 

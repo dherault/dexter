@@ -14,7 +14,7 @@ async function main() {
 
   const sushiswap = dexter.getDex('sushiswap')
 
-  sushiswap.startListeningToWrappedCurrencyPriceUpdates()
+  await sushiswap.startListeningToWrappedNativePriceUpdates()
 
   // const pairAddresses = await sushiswap.getAllPairAddresses()
 
@@ -26,9 +26,9 @@ async function main() {
   //   sushiswap.addPairListener(pairAddress, processPairUpdate(sushiswap, pairAddress))
   // })
 
-  const tokenAddress = sushiswap.getToken('WONE').address
+  // const tokenAddress = sushiswap.getToken('WONE').address
 
-  sushiswap.addPriceListener(tokenAddress, processPriceUpdate(sushiswap, tokenAddress))
+  // sushiswap.addPriceListener(tokenAddress, processPriceUpdate(sushiswap, tokenAddress))
   // sushiswap.
   // console.log('pairAddress', pairAddress)
 

@@ -89,6 +89,10 @@ class Dex {
     this.pairAddressToTokenAddresses = {}
     this.tokenAddress0ToTokenAddress1ToPairAddress = {}
     this.pairAddressToPriceData = {}
+
+    this.unlistenToWrappedNativePriceUpdates = () => null
+    this.wrappedNativePriceInUsd = null
+    this.wrappedNativePriceInUsdTimestamp = null
   }
 
   /* ---
@@ -353,21 +357,24 @@ class Dex {
         x0 = p1 * r0
         x1 = p0 * r1
         P / K = x1 / x0 = (p0 * r1) / (p1 * r0)
-        */
-      console.log('stablecoin', stablecoinSymbol)
+      */
+      let price
 
       if (isToken0 && timeWeightedAveragePrice1.gt(0) && reserve0.gt(0)) {
-        callback({
-          timestamp,
-          price: K.times(timeWeightedAveragePrice0).times(reserve1).div(timeWeightedAveragePrice1).div(reserve0),
-        })
+        price = K.times(timeWeightedAveragePrice0).times(reserve1).div(timeWeightedAveragePrice1).div(reserve0)
       }
       if (!isToken0 && timeWeightedAveragePrice0.gt(0) && reserve1.gt(0)) {
-        callback({
-          timestamp,
-          price: K.times(timeWeightedAveragePrice1).times(reserve0).div(timeWeightedAveragePrice0).div(reserve1),
-        })
+        price = K.times(timeWeightedAveragePrice1).times(reserve0).div(timeWeightedAveragePrice0).div(reserve1)
       }
+
+      if (!price) return
+
+      console.log('stablecoin inverse', stablecoinSymbol, price.toString())
+
+      callback({
+        timestamp,
+        price,
+      })
     }
   }
 
@@ -375,8 +382,26 @@ class Dex {
     LIFECYCLE
   --- */
 
-  startListeningToWrappedCurrencyPriceUpdates() {
+  async startListeningToWrappedNativePriceUpdates() {
+    const { wrappedNativeTokenAddress } = this.dexters.chainMetadata
 
+    if (!wrappedNativeTokenAddress) {
+      throw new Error(`[Dexters] ${this.dexters.chainId} ${this.dexId} wrappedNativeTokenAddress not set for this blockchain`)
+    }
+
+    const wrappedNativeTokenSymbol = this.getToken(wrappedNativeTokenAddress).symbol
+
+    console.log('Listening to wrapped native price updates', wrappedNativeTokenSymbol, wrappedNativeTokenAddress)
+
+    this.unlistenToWrappedNativePriceUpdates = await this.addPriceListener(wrappedNativeTokenAddress, ({ timestamp, price }) => {
+      console.log('wrapped native price update', wrappedNativeTokenSymbol, price.toString())
+      this.wrappedNativePriceInUsd = price
+      this.wrappedNativePriceInUsdTimestamp = timestamp
+    })
+  }
+
+  stopListeningToWrappedNativePriceUpdates() {
+    this.unlistenToWrappedNativePriceUpdates()
   }
 }
 

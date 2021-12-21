@@ -13,8 +13,10 @@ async function main() {
   console.log('dexIds', dexIds)
 
   const sushiswap = dexter.getDex('sushiswap')
+  const fatex = dexter.getDex('fatex')
 
   await sushiswap.startListeningToWrappedNativePriceUpdates()
+  await fatex.startListeningToWrappedNativePriceUpdates()
 
   // const pairAddresses = await sushiswap.getAllPairAddresses()
 

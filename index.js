@@ -2,7 +2,6 @@ const { ethers } = require('ethers')
 const BigNumber = require('bignumber.js')
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
-const K = new BigNumber(10 ** 12)
 
 class Dexters {
 
@@ -285,7 +284,7 @@ class Dex {
   }
 
   async processSyncEvent(pairAddress, event, xReserve0, xReserve1) {
-    console.log('sync event')
+    // console.log('sync event')
     const [tokenAddress0, tokenAddress1] = this.getPairTokenAddresses(pairAddress)
 
     if (!(tokenAddress0 && tokenAddress1)) return null
@@ -344,8 +343,8 @@ class Dex {
       const isToken0 = tokenAddress0 === tokenAddress
       const stablecoinSymbol = (isToken0 ? this.getToken(tokenAddress1) : this.getToken(tokenAddress0)).symbol
 
-      // HACK
-      if (stablecoinSymbol === 'BUSD') return
+      // // HACK
+      // if (stablecoinSymbol === 'BUSD') return
 
       const {
         timestamp,
@@ -354,23 +353,39 @@ class Dex {
       } = syncEventData
 
       /*
+        K: decimal ratio
         x0 = p1 * r0
         x1 = p0 * r1
         P / K = x1 / x0 = (p0 * r1) / (p1 * r0)
       */
       let price
 
+      const decimal0 = new BigNumber(`1e+${this.getToken(tokenAddress0).decimals}`)
+      const decimal1 = new BigNumber(`1e+${this.getToken(tokenAddress1).decimals}`)
+
       if (isToken0 && timeWeightedAveragePrice1.gt(0) && reserve0.gt(0)) {
-        price = K.times(timeWeightedAveragePrice0).times(reserve1).div(timeWeightedAveragePrice1).div(reserve0)
+        price = decimal0
+        .div(decimal1)
+        .times(timeWeightedAveragePrice0)
+        .times(reserve1)
+        .div(timeWeightedAveragePrice1)
+        .div(reserve0)
       }
       if (!isToken0 && timeWeightedAveragePrice0.gt(0) && reserve1.gt(0)) {
-        price = K.times(timeWeightedAveragePrice1).times(reserve0).div(timeWeightedAveragePrice0).div(reserve1)
+        price = decimal1
+        .div(decimal0)
+        .times(timeWeightedAveragePrice1)
+        .times(reserve0)
+        .div(timeWeightedAveragePrice0)
+        .div(reserve1)
       }
 
       if (!price) return
 
-      console.log('stablecoin inverse', stablecoinSymbol, price.toString())
-
+      console.log('stablecoin inverse', stablecoinSymbol, pairAddress, price.toString())
+      console.log('decimal0', decimal0.toString())
+      console.log('decimal1', decimal1.toString())
+      console.log('isToken0', isToken0)
       callback({
         timestamp,
         price,
@@ -391,10 +406,11 @@ class Dex {
 
     const wrappedNativeTokenSymbol = this.getToken(wrappedNativeTokenAddress).symbol
 
-    console.log('Listening to wrapped native price updates', wrappedNativeTokenSymbol, wrappedNativeTokenAddress)
+    console.log(`[Dexters|${this.chainId}|${this.dexId}] Listening to wrapped native price updates: ${wrappedNativeTokenSymbol}`)
 
     this.unlistenToWrappedNativePriceUpdates = await this.addPriceListener(wrappedNativeTokenAddress, ({ timestamp, price }) => {
-      console.log('wrapped native price update', wrappedNativeTokenSymbol, price.toString())
+      console.log(`[Dexters|${this.chainId}|${this.dexId}] ${wrappedNativeTokenSymbol} price update`, price.toString())
+
       this.wrappedNativePriceInUsd = price
       this.wrappedNativePriceInUsdTimestamp = timestamp
     })

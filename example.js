@@ -1,5 +1,3 @@
-const { ethers } = require('ethers')
-
 const Dexters = require('.')
 
 async function main() {
@@ -20,7 +18,7 @@ async function main() {
 
   await sushiswap.addWrappedNativePriceListener(wethAddress, ({ timestamp, price }) => {
     console.log('WETH', timestamp, price.toString())
-    console.log('WETH', timestamp, price.times(sushiswap.wrappedNativePriceInUsd).toString())
+    console.log('WETH', timestamp, price.times(sushiswap.wrappedNativePriceInUsd).toString(), '$')
   })
 }
 

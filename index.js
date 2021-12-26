@@ -235,7 +235,21 @@ class Dex {
     ORACLE
   --- */
 
-  async addPriceListener(tokenAddress, callback) {
+  async addWrappedNativePriceListener(tokenAddress, callback) {
+    const { wrappedNativeTokenAddress } = this.dexters.chainMetadata
+
+    if (!wrappedNativeTokenAddress) {
+      throw new Error(`[Dexters|${this.dexters.chainId}|${this.dexId}] wrappedNativeTokenAddress not set for this blockchain`)
+    }
+
+    const oracle = this.createOracle(tokenAddress, callback)
+
+    const pairAddress = await this.getPairAddress(tokenAddress, wrappedNativeTokenAddress)
+
+    return this.addPairListener(pairAddress, syncEventData => oracle(pairAddress, syncEventData))
+  }
+
+  async addStablecoinPriceListener(tokenAddress, callback) {
     const stablecoinAddresses = Object.keys(this.stablecoinAddressToStablecoinMetadata)
     const stablecoinPairAddresses = await Promise.all(stablecoinAddresses.map(stablecoinAddress => this.getPairAddress(tokenAddress, stablecoinAddress)))
     const workingStablecoinPairAddresses = stablecoinPairAddresses.filter(pairAddress => pairAddress !== zeroAddress)
@@ -249,15 +263,15 @@ class Dex {
 
     const oracle = this.createOracle(tokenAddress, callback)
 
-    const unlisteners = workingStablecoinPairAddresses.map(pairAddress => (
+    const unlisteners = await Promise.all(workingStablecoinPairAddresses.map(pairAddress => (
       this.addPairListener(pairAddress, syncEventData => oracle(pairAddress, syncEventData))
-    ))
+    )))
 
     // Return compound unlistener
     return () => unlisteners.forEach(unlistener => unlistener())
   }
 
-  addPairListener(pairAddress, callback) {
+  async addPairListener(pairAddress, callback) {
     if (!this.pairAddressToListenerToUnlistener[pairAddress]) {
       this.pairAddressToListenerToUnlistener[pairAddress] = new Map()
     }
@@ -267,15 +281,10 @@ class Dex {
     }
 
     const pairContract = this.getPairContract(pairAddress)
+    const { token0, token1 } = await this.getPairTokenAddressesFromContract(pairAddress)
 
     const listener = async (reserve0, reserve1, event) => {
-      const [
-        { timestamp },
-        { token0, token1 },
-      ] = await Promise.all([
-        event.getBlock(),
-        this.getPairTokenAddressesFromContract(pairAddress),
-      ])
+      const { timestamp } = await event.getBlock()
 
       callback({
         timestamp,
@@ -291,57 +300,6 @@ class Dex {
     this.pairAddressToListenerToUnlistener[pairAddress].set(callback, unlistener)
 
     return unlistener
-  }
-
-  // ! deprecated
-  async processSyncEvent(pairAddress, event, xReserve0, xReserve1) {
-    // console.log('sync event')
-    const [tokenAddress0, tokenAddress1] = this.getPairTokenAddresses(pairAddress)
-
-    if (!(tokenAddress0 && tokenAddress1)) return null
-
-    const [
-      {
-        timestamp,
-      },
-      {
-        [tokenAddress0]: priceCumulative0,
-        [tokenAddress1]: priceCumulative1,
-      },
-    ] = await Promise.all([
-      event.getBlock(),
-      this.getPairCumulativePrices(pairAddress),
-    ])
-
-    if (!this.pairAddressToPriceData[pairAddress]) {
-      this.pairAddressToPriceData[pairAddress] = []
-    }
-
-    const reserve0 = new BigNumber(xReserve0.toString())
-    const reserve1 = new BigNumber(xReserve1.toString())
-    const lastDataPoint = this.pairAddressToPriceData[pairAddress][this.pairAddressToPriceData[pairAddress].length - 1]
-
-    this.pairAddressToPriceData[pairAddress].push({
-      timestamp,
-      reserve0,
-      reserve1,
-      priceCumulative0,
-      priceCumulative1,
-    })
-
-    if (!lastDataPoint || timestamp === lastDataPoint.timestamp) return null
-
-    return {
-      timestamp,
-      [tokenAddress0]: {
-        reserve: reserve0,
-        timeWeightedAveragePrice: (priceCumulative0.minus(lastDataPoint.priceCumulative0)).div(timestamp - lastDataPoint.timestamp),
-      },
-      [tokenAddress1]: {
-        reserve: reserve1,
-        timeWeightedAveragePrice: (priceCumulative1.minus(lastDataPoint.priceCumulative1)).div(timestamp - lastDataPoint.timestamp),
-      },
-    }
   }
 
   createOracle(tokenAddress, callback) {
@@ -399,6 +357,57 @@ class Dex {
     }
   }
 
+  // ! deprecated
+  // async processSyncEvent(pairAddress, event, xReserve0, xReserve1) {
+  //   // console.log('sync event')
+  //   const [tokenAddress0, tokenAddress1] = this.getPairTokenAddresses(pairAddress)
+
+  //   if (!(tokenAddress0 && tokenAddress1)) return null
+
+  //   const [
+  //     {
+  //       timestamp,
+  //     },
+  //     {
+  //       [tokenAddress0]: priceCumulative0,
+  //       [tokenAddress1]: priceCumulative1,
+  //     },
+  //   ] = await Promise.all([
+  //     event.getBlock(),
+  //     this.getPairCumulativePrices(pairAddress),
+  //   ])
+
+  //   if (!this.pairAddressToPriceData[pairAddress]) {
+  //     this.pairAddressToPriceData[pairAddress] = []
+  //   }
+
+  //   const reserve0 = new BigNumber(xReserve0.toString())
+  //   const reserve1 = new BigNumber(xReserve1.toString())
+  //   const lastDataPoint = this.pairAddressToPriceData[pairAddress][this.pairAddressToPriceData[pairAddress].length - 1]
+
+  //   this.pairAddressToPriceData[pairAddress].push({
+  //     timestamp,
+  //     reserve0,
+  //     reserve1,
+  //     priceCumulative0,
+  //     priceCumulative1,
+  //   })
+
+  //   if (!lastDataPoint || timestamp === lastDataPoint.timestamp) return null
+
+  //   return {
+  //     timestamp,
+  //     [tokenAddress0]: {
+  //       reserve: reserve0,
+  //       timeWeightedAveragePrice: (priceCumulative0.minus(lastDataPoint.priceCumulative0)).div(timestamp - lastDataPoint.timestamp),
+  //     },
+  //     [tokenAddress1]: {
+  //       reserve: reserve1,
+  //       timeWeightedAveragePrice: (priceCumulative1.minus(lastDataPoint.priceCumulative1)).div(timestamp - lastDataPoint.timestamp),
+  //     },
+  //   }
+  // }
+
   /* ---
     LIFECYCLE
   --- */
@@ -414,7 +423,7 @@ class Dex {
 
     console.log(`[Dexters|${this.chainId}|${this.dexId}] Listening to wrapped native price updates: ${wrappedNativeTokenSymbol}`)
 
-    this.unlistenToWrappedNativePriceUpdates = await this.addPriceListener(wrappedNativeTokenAddress, ({ timestamp, price }) => {
+    this.unlistenToWrappedNativePriceUpdates = await this.addStablecoinPriceListener(wrappedNativeTokenAddress, ({ timestamp, price }) => {
       console.log(`[Dexters|${this.chainId}|${this.dexId}] ${wrappedNativeTokenSymbol} price update`, price.toString())
 
       this.wrappedNativePriceInUsd = price

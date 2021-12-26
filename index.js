@@ -269,9 +269,19 @@ class Dex {
     const pairContract = this.getPairContract(pairAddress)
 
     const listener = async (reserve0, reserve1, event) => {
-      const data = await this.processSyncEvent(pairAddress, event, reserve0, reserve1)
+      const [
+        { timestamp },
+        { token0, token1 },
+      ] = await Promise.all([
+        event.getBlock(),
+        this.getPairTokenAddressesFromContract(pairAddress),
+      ])
 
-      if (data) callback(data)
+      callback({
+        timestamp,
+        [token0]: new BigNumber(reserve0.toString()),
+        [token1]: new BigNumber(reserve1.toString()),
+      })
     }
 
     pairContract.on('Sync', listener)
@@ -283,6 +293,7 @@ class Dex {
     return unlistener
   }
 
+  // ! deprecated
   async processSyncEvent(pairAddress, event, xReserve0, xReserve1) {
     // console.log('sync event')
     const [tokenAddress0, tokenAddress1] = this.getPairTokenAddresses(pairAddress)
@@ -334,61 +345,56 @@ class Dex {
   }
 
   createOracle(tokenAddress, callback) {
-    const pairAddressToSyncEventData = {}
+    const pairAddressToPriceComputationData = {}
 
     return async (pairAddress, syncEventData) => {
-      pairAddressToSyncEventData[pairAddress] = syncEventData
-
       const [tokenAddress0, tokenAddress1] = this.getPairTokenAddresses(pairAddress)
       const isToken0 = tokenAddress0 === tokenAddress
-      const stablecoinSymbol = (isToken0 ? this.getToken(tokenAddress1) : this.getToken(tokenAddress0)).symbol
-
-      // // HACK
-      // if (stablecoinSymbol === 'BUSD') return
 
       const {
         timestamp,
-        [tokenAddress0]: { reserve: reserve0, timeWeightedAveragePrice: timeWeightedAveragePrice0 },
-        [tokenAddress1]: { reserve: reserve1, timeWeightedAveragePrice: timeWeightedAveragePrice1 },
+        [tokenAddress0]: reserve0,
+        [tokenAddress1]: reserve1,
       } = syncEventData
 
-      /*
-        K: decimal ratio
-        x0 = p1 * r0
-        x1 = p0 * r1
-        P / K = x1 / x0 = (p0 * r1) / (p1 * r0)
-      */
       let price
-
       const decimal0 = new BigNumber(`1e+${this.getToken(tokenAddress0).decimals}`)
       const decimal1 = new BigNumber(`1e+${this.getToken(tokenAddress1).decimals}`)
 
-      if (isToken0 && timeWeightedAveragePrice1.gt(0) && reserve0.gt(0)) {
+      if (isToken0 && reserve0.gt(0)) {
         price = decimal0
         .div(decimal1)
-        .times(timeWeightedAveragePrice0)
         .times(reserve1)
-        .div(timeWeightedAveragePrice1)
         .div(reserve0)
       }
-      if (!isToken0 && timeWeightedAveragePrice0.gt(0) && reserve1.gt(0)) {
+      if (!isToken0 && reserve1.gt(0)) {
         price = decimal1
         .div(decimal0)
-        .times(timeWeightedAveragePrice1)
         .times(reserve0)
-        .div(timeWeightedAveragePrice0)
         .div(reserve1)
       }
 
       if (!price) return
 
-      console.log('stablecoin inverse', stablecoinSymbol, pairAddress, price.toString())
-      console.log('decimal0', decimal0.toString())
-      console.log('decimal1', decimal1.toString())
-      console.log('isToken0', isToken0)
+      pairAddressToPriceComputationData[pairAddress] = {
+        price,
+        reserve: isToken0 ? reserve1 : reserve0,
+      }
+
+      // The final price is a weighted average of the prices by the reserve
+      // Of the different pairs
+      const priceComputationData = Object.values(pairAddressToPriceComputationData)
+      let sumWeighted = new BigNumber(0)
+      let sumReserve = new BigNumber(0)
+
+      priceComputationData.forEach(({ price, reserve }) => {
+        sumWeighted = sumWeighted.plus(price.times(reserve))
+        sumReserve = sumReserve.plus(reserve)
+      })
+
       callback({
         timestamp,
-        price,
+        price: sumWeighted.div(sumReserve),
       })
     }
   }

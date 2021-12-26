@@ -3,7 +3,7 @@ const { ethers } = require('ethers')
 const Dexters = require('.')
 
 async function main() {
-  const dexter = new Dexters(1666600000) // Harmony mainnet
+  const dexter = new Dexters(137) // Polygon mainnet
   const currencySymbol = dexter.chainMetadata.nativeCurrency.symbol
 
   console.log('currencySymbol', currencySymbol)
@@ -13,10 +13,8 @@ async function main() {
   console.log('dexIds', dexIds)
 
   const sushiswap = dexter.getDex('sushiswap')
-  const fatex = dexter.getDex('fatex')
 
   await sushiswap.startListeningToWrappedNativePriceUpdates()
-  await fatex.startListeningToWrappedNativePriceUpdates()
 
   // const pairAddresses = await sushiswap.getAllPairAddresses()
 

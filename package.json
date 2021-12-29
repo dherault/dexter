@@ -26,8 +26,8 @@
   "homepage": "https://github.com/dherault/dexter#readme",
   "dependencies": {
     "bignumber.js": "^9.0.2",
-    "ethers": "^5.5.2",
-    "ultimate-token-list": "^6.1.0"
+    "blockchain-datasets": "^1.0.0",
+    "ethers": "^5.5.2"
   },
   "devDependencies": {
     "eslint": "^8.5.0",

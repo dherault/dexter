@@ -7,7 +7,7 @@ class Dexters {
 
   constructor(chainId) {
     this.chainId = chainId
-    this.chainMetadata = require(`ultimate-token-list/data/blockchains/${chainId}/metadata.json`)
+    this.chainMetadata = require(`blockchain-datasets/data/blockchains/${chainId}/metadata.json`)
 
     if (!this.chainMetadata) {
       throw new Error(`Unsupported chainId: ${chainId}`)
@@ -15,8 +15,8 @@ class Dexters {
 
     this.provider = new ethers.providers.JsonRpcProvider(this.chainMetadata.rpc[0])
 
-    this.tokenAddressToMetadata = require(`ultimate-token-list/data/blockchains/${chainId}/tokens.json`)
-    this.stablecoinAddressToMetadata = require(`ultimate-token-list/data/blockchains/${chainId}/stablecoins.json`)
+    this.tokenAddressToMetadata = require(`blockchain-datasets/data/blockchains/${chainId}/tokens.json`)
+    this.stablecoinAddressToMetadata = require(`blockchain-datasets/data/blockchains/${chainId}/stablecoins.json`)
     this.tokenSymbolToMetadata = {}
 
     Object.values(this.tokenAddressToMetadata).forEach(tokenInfo => {
@@ -68,15 +68,15 @@ class Dex {
     this.dexId = dexId
     this.dexters = dexters
 
-    this.metadata = require(`ultimate-token-list/data/dexes/${dexId}/metadata.json`)
-    this.contractNameToContractMetadata = require(`ultimate-token-list/data/dexes/${dexId}/contracts/${chainId}.json`)
+    this.metadata = require(`blockchain-datasets/data/dexes/${dexId}/metadata.json`)
+    this.contractNameToContractMetadata = require(`blockchain-datasets/data/dexes/${dexId}/contracts/${chainId}.json`)
 
     const pairFactoryContractMetadata = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.factory]
 
     this.pairFactoryContract = new ethers.Contract(pairFactoryContractMetadata.address, pairFactoryContractMetadata.abi, this.dexters.provider)
 
-    this.stablecoinAddressToMetadata = require(`ultimate-token-list/data/dexes/${dexId}/stablecoins/${chainId}.json`)
-    this.tokenAddressToMetadata = require(`ultimate-token-list/data/dexes/${dexId}/tokens/${chainId}.json`)
+    this.stablecoinAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/stablecoins/${chainId}.json`)
+    this.tokenAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/tokens/${chainId}.json`)
     this.tokenSymbolToMetadata = {}
 
     Object.values(this.tokenAddressToMetadata).forEach(tokenInfo => {

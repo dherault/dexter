@@ -22,7 +22,7 @@ async function main() {
 
   const wmaticAddress = sushiswap.getToken('WMATIC').address
   const wethAddress = sushiswap.getToken('WETH').address
-  const sushiAddress = sushiswap.getToken('SUSHI').address
+  // const sushiAddress = sushiswap.getToken('SUSHI').address
 
   // const wmaticWethPairAddress = await sushiswap.getPairAddress(wmaticAddress, wethAddress)
   // const wmaticSushiPairAddress = await sushiswap.getPairAddress(wmaticAddress, sushiAddress)

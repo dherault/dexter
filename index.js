@@ -262,7 +262,13 @@ class Dex {
     return () => unlisteners.forEach(unlistener => unlistener())
   }
 
-  async addOracleListener(pairAddress, callback) {
+  async addPairOracleListener(pairAddress, callback) {
+    return this.addPairListener(pairAddress, syncEventData => this.oracle(pairAddress, syncEventData, callback))
+  }
+
+  async addOracleListener(tokenAddress0, tokenAddress1, callback) {
+    const pairAddress = await this.getPairAddress(tokenAddress0, tokenAddress1)
+
     return this.addPairListener(pairAddress, syncEventData => this.oracle(pairAddress, syncEventData, callback))
   }
 

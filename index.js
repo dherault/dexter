@@ -15,12 +15,12 @@ class Dexters {
 
     this.provider = new ethers.providers.JsonRpcProvider(this.chainMetadata.rpc[0])
 
-    this.tokenAddressToTokenMetadata = require(`ultimate-token-list/data/blockchains/${chainId}/tokens.json`)
-    this.stablecoinAddressToStablecoinMetadata = require(`ultimate-token-list/data/blockchains/${chainId}/stablecoins.json`)
-    this.tokenSymbolToTokenMetadata = {}
+    this.tokenAddressToMetadata = require(`ultimate-token-list/data/blockchains/${chainId}/tokens.json`)
+    this.stablecoinAddressToMetadata = require(`ultimate-token-list/data/blockchains/${chainId}/stablecoins.json`)
+    this.tokenSymbolToMetadata = {}
 
-    Object.values(this.tokenAddressToTokenMetadata).forEach(tokenInfo => {
-      this.tokenSymbolToTokenMetadata[tokenInfo.symbol] = tokenInfo
+    Object.values(this.tokenAddressToMetadata).forEach(tokenInfo => {
+      this.tokenSymbolToMetadata[tokenInfo.symbol] = tokenInfo
     })
 
     this.dexIdToDex = {}
@@ -39,21 +39,21 @@ class Dexters {
   }
 
   getToken(symbolOrAddress) {
-    return this.tokenSymbolToTokenMetadata[symbolOrAddress] || this.tokenAddressToTokenMetadata[symbolOrAddress]
+    return this.tokenSymbolToMetadata[symbolOrAddress] || this.tokenAddressToMetadata[symbolOrAddress]
   }
 
   getCrossTokens(dexId0, dexId1) {
     const dex0 = this.getDex(dexId0)
     const dex1 = this.getDex(dexId1)
-    const tokensAddresses0 = new Set(Object.keys(dex0.tokenAddressToTokenMetadata))
-    const tokensAddresses1 = new Set(Object.keys(dex1.tokenAddressToTokenMetadata))
+    const tokensAddresses0 = new Set(Object.keys(dex0.tokenAddressToMetadata))
+    const tokensAddresses1 = new Set(Object.keys(dex1.tokenAddressToMetadata))
 
     const commonTokenAddresses = new Set([...tokensAddresses0].filter(x => tokensAddresses1.has(x)))
 
     const tokenAddressTokenMetadata = {}
 
     commonTokenAddresses.forEach(tokenAddress => {
-      tokenAddressTokenMetadata[tokenAddress] = dex0.tokenAddressToTokenMetadata[tokenAddress]
+      tokenAddressTokenMetadata[tokenAddress] = dex0.tokenAddressToMetadata[tokenAddress]
     })
 
     return tokenAddressTokenMetadata
@@ -75,12 +75,12 @@ class Dex {
 
     this.pairFactoryContract = new ethers.Contract(pairFactoryContractMetadata.address, pairFactoryContractMetadata.abi, this.dexters.provider)
 
-    this.stablecoinAddressToStablecoinMetadata = require(`ultimate-token-list/data/dexes/${dexId}/stablecoins/${chainId}.json`)
-    this.tokenAddressToTokenMetadata = require(`ultimate-token-list/data/dexes/${dexId}/tokens/${chainId}.json`)
-    this.tokenSymbolToTokenMetadata = {}
+    this.stablecoinAddressToMetadata = require(`ultimate-token-list/data/dexes/${dexId}/stablecoins/${chainId}.json`)
+    this.tokenAddressToMetadata = require(`ultimate-token-list/data/dexes/${dexId}/tokens/${chainId}.json`)
+    this.tokenSymbolToMetadata = {}
 
-    Object.values(this.tokenAddressToTokenMetadata).forEach(tokenInfo => {
-      this.tokenSymbolToTokenMetadata[tokenInfo.symbol] = tokenInfo
+    Object.values(this.tokenAddressToMetadata).forEach(tokenInfo => {
+      this.tokenSymbolToMetadata[tokenInfo.symbol] = tokenInfo
     })
 
     this.pairAddressToContract = {}
@@ -99,14 +99,14 @@ class Dex {
   --- */
 
   getToken(symbolOrAddress) {
-    return this.tokenSymbolToTokenMetadata[symbolOrAddress] || this.tokenAddressToTokenMetadata[symbolOrAddress]
+    return this.tokenSymbolToMetadata[symbolOrAddress] || this.tokenAddressToMetadata[symbolOrAddress]
   }
 
   /* ---
     PAIRS
   --- */
 
-  registerPair(tokenAddress0, tokenAddress1, pairAddress) {
+  registerPair(pairAddress, tokenAddress0, tokenAddress1) {
     this.pairAddressToTokenAddresses[pairAddress] = [tokenAddress0, tokenAddress1]
 
     if (!this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0]) {
@@ -132,14 +132,14 @@ class Dex {
 
     const pairAddress = await this.pairFactoryContract.getPair(tokenAddress0, tokenAddress1)
 
-    this.registerPair(tokenAddress0, tokenAddress1, pairAddress)
+    this.registerPair(pairAddress, tokenAddress0, tokenAddress1)
 
     return pairAddress
   }
 
   async getAllPairAddresses() {
     const pairAddressesPromises = []
-    const tokenAddresses = Object.keys(this.tokenAddressToTokenMetadata)
+    const tokenAddresses = Object.keys(this.tokenAddressToMetadata)
 
     for (let i = 0; i < tokenAddresses.length; i++) {
       const tokenAddress0 = tokenAddresses[i]
@@ -154,7 +154,7 @@ class Dex {
           pairAddressesPromises.push(
             this.getPairAddress(tokenAddress0, tokenAddress1)
             .then(pairAddress => {
-              this.registerPair(tokenAddress0, tokenAddress1, pairAddress)
+              this.registerPair(pairAddress, tokenAddress0, tokenAddress1)
 
               return pairAddress
             })
@@ -171,21 +171,23 @@ class Dex {
     const pairContract = this.getPairContract(pairAddress)
 
     const [
-      token0,
-      token1,
+      tokenAddress0,
+      tokenAddress1,
     ] = await Promise.all([
       pairContract.token0(),
       pairContract.token1(),
     ])
 
-    return { token0, token1 }
+    this.registerPair(pairAddress, tokenAddress0, tokenAddress1)
+
+    return { tokenAddress0, tokenAddress1 }
   }
 
   async getPairReserves(pairAddress) {
     const pairContract = this.getPairContract(pairAddress)
 
     const [
-      { token0, token1 },
+      { tokenAddress0, tokenAddress1 },
       { _reserve0, _reserve1 },
     ] = await Promise.all([
       this.getPairTokenAddressesFromContract(pairAddress),
@@ -193,27 +195,8 @@ class Dex {
     ])
 
     return {
-      [token0]: new BigNumber(_reserve0.toString()),
-      [token1]: new BigNumber(_reserve1.toString()),
-    }
-  }
-
-  async getPairCumulativePrices(pairAddress) {
-    const pairContract = this.getPairContract(pairAddress)
-
-    const [
-      { token0, token1 },
-      priceCumulative0,
-      priceCumulative1,
-    ] = await Promise.all([
-      this.getPairTokenAddressesFromContract(pairAddress),
-      pairContract.price0CumulativeLast(),
-      pairContract.price1CumulativeLast(),
-    ])
-
-    return {
-      [token0]: new BigNumber(priceCumulative0.toString()),
-      [token1]: new BigNumber(priceCumulative1.toString()),
+      [tokenAddress0]: new BigNumber(_reserve0.toString()),
+      [tokenAddress1]: new BigNumber(_reserve1.toString()),
     }
   }
 
@@ -235,40 +218,52 @@ class Dex {
     ORACLE
   --- */
 
-  async addWrappedNativePriceListener(tokenAddress, callback) {
+  async addStablecoinsOracleListener(callback) {
     const { wrappedNativeTokenAddress } = this.dexters.chainMetadata
 
     if (!wrappedNativeTokenAddress) {
       throw new Error(`[Dexters|${this.dexters.chainId}|${this.dexId}] wrappedNativeTokenAddress not set for this blockchain`)
     }
 
-    const oracle = this.createOracle(tokenAddress, callback)
-
-    const pairAddress = await this.getPairAddress(tokenAddress, wrappedNativeTokenAddress)
-
-    return this.addPairListener(pairAddress, syncEventData => oracle(pairAddress, syncEventData))
-  }
-
-  async addStablecoinPriceListener(tokenAddress, callback) {
-    const stablecoinAddresses = Object.keys(this.stablecoinAddressToStablecoinMetadata)
-    const stablecoinPairAddresses = await Promise.all(stablecoinAddresses.map(stablecoinAddress => this.getPairAddress(tokenAddress, stablecoinAddress)))
+    const stablecoinAddresses = Object.keys(this.stablecoinAddressToMetadata)
+    const stablecoinPairAddresses = await Promise.all(stablecoinAddresses.map(stablecoinAddress => this.getPairAddress(wrappedNativeTokenAddress, stablecoinAddress)))
     const workingStablecoinPairAddresses = stablecoinPairAddresses.filter(pairAddress => pairAddress !== zeroAddress)
 
     if (workingStablecoinPairAddresses.length === 0) {
-      console.warn(`[Dexters] ${this.chainId} ${this.dexId}: no working stablecoin pairs found for token ${tokenAddress}`)
-
-      // Return mock unlistener
-      return () => null
+      throw new Error(`[Dexters|${this.chainId}|${this.dexId}] No working stablecoin pairs found for token ${wrappedNativeTokenAddress}`)
     }
 
-    const oracle = this.createOracle(tokenAddress, callback)
+    const pairAddressToData = {}
 
+    // Create a pair listener for every stablecoin
     const unlisteners = await Promise.all(workingStablecoinPairAddresses.map(pairAddress => (
-      this.addPairListener(pairAddress, syncEventData => oracle(pairAddress, syncEventData))
+      this.addPairListener(pairAddress, syncEventData => this.oracle(pairAddress, syncEventData, data => {
+        pairAddressToData[pairAddress] = data
+
+        // The final price is a weighted average of the prices by the reserve
+        // Of the different pairs
+        const priceComputationData = Object.values(pairAddressToData)
+        let sumWeighted = new BigNumber(0)
+        let sumReserve = new BigNumber(0)
+
+        priceComputationData.forEach(({ [wrappedNativeTokenAddress]: { price, reserve } }) => {
+          sumWeighted = sumWeighted.plus(price.times(reserve))
+          sumReserve = sumReserve.plus(reserve)
+        })
+
+        callback({
+          timestamp: data.timestamp,
+          priceUSD: sumWeighted.div(sumReserve),
+        })
+      }))
     )))
 
     // Return compound unlistener
     return () => unlisteners.forEach(unlistener => unlistener())
+  }
+
+  async addOracleListener(pairAddress, callback) {
+    return this.addPairListener(pairAddress, syncEventData => this.oracle(pairAddress, syncEventData, callback))
   }
 
   async addPairListener(pairAddress, callback) {
@@ -281,15 +276,15 @@ class Dex {
     }
 
     const pairContract = this.getPairContract(pairAddress)
-    const { token0, token1 } = await this.getPairTokenAddressesFromContract(pairAddress)
+    const { tokenAddress0, tokenAddress1 } = await this.getPairTokenAddressesFromContract(pairAddress)
 
     const listener = async (reserve0, reserve1, event) => {
       const { timestamp } = await event.getBlock()
 
       callback({
         timestamp,
-        [token0]: new BigNumber(reserve0.toString()),
-        [token1]: new BigNumber(reserve1.toString()),
+        [tokenAddress0]: new BigNumber(reserve0.toString()),
+        [tokenAddress1]: new BigNumber(reserve1.toString()),
       })
     }
 
@@ -302,138 +297,52 @@ class Dex {
     return unlistener
   }
 
-  createOracle(tokenAddress, callback) {
-    const pairAddressToPriceComputationData = {}
+  oracle(pairAddress, syncEventData, callback) {
+    const [tokenAddress0, tokenAddress1] = this.getPairTokenAddresses(pairAddress)
 
-    return async (pairAddress, syncEventData) => {
-      const [tokenAddress0, tokenAddress1] = this.getPairTokenAddresses(pairAddress)
-      const isToken0 = tokenAddress0 === tokenAddress
+    const {
+      timestamp,
+      [tokenAddress0]: reserve0,
+      [tokenAddress1]: reserve1,
+    } = syncEventData
 
-      const {
-        timestamp,
-        [tokenAddress0]: reserve0,
-        [tokenAddress1]: reserve1,
-      } = syncEventData
+    let price0
+    let price1
+    const decimal0 = new BigNumber(`1e+${this.getToken(tokenAddress0).decimals}`)
+    const decimal1 = new BigNumber(`1e+${this.getToken(tokenAddress1).decimals}`)
 
-      let price
-      const decimal0 = new BigNumber(`1e+${this.getToken(tokenAddress0).decimals}`)
-      const decimal1 = new BigNumber(`1e+${this.getToken(tokenAddress1).decimals}`)
-
-      if (isToken0 && reserve0.gt(0)) {
-        price = decimal0
+    if (reserve0.gt(0)) {
+      price0 = decimal0
         .div(decimal1)
         .times(reserve1)
         .div(reserve0)
-      }
-      if (!isToken0 && reserve1.gt(0)) {
-        price = decimal1
+    }
+    if (reserve1.gt(0)) {
+      price1 = decimal1
         .div(decimal0)
         .times(reserve0)
         .div(reserve1)
-      }
-
-      if (!price) return
-
-      pairAddressToPriceComputationData[pairAddress] = {
-        price,
-        reserve: isToken0 ? reserve1 : reserve0,
-      }
-
-      // The final price is a weighted average of the prices by the reserve
-      // Of the different pairs
-      const priceComputationData = Object.values(pairAddressToPriceComputationData)
-      let sumWeighted = new BigNumber(0)
-      let sumReserve = new BigNumber(0)
-
-      priceComputationData.forEach(({ price, reserve }) => {
-        sumWeighted = sumWeighted.plus(price.times(reserve))
-        sumReserve = sumReserve.plus(reserve)
-      })
-
-      callback({
-        timestamp,
-        price: sumWeighted.div(sumReserve),
-      })
-    }
-  }
-
-  // ! deprecated
-  // async processSyncEvent(pairAddress, event, xReserve0, xReserve1) {
-  //   // console.log('sync event')
-  //   const [tokenAddress0, tokenAddress1] = this.getPairTokenAddresses(pairAddress)
-
-  //   if (!(tokenAddress0 && tokenAddress1)) return null
-
-  //   const [
-  //     {
-  //       timestamp,
-  //     },
-  //     {
-  //       [tokenAddress0]: priceCumulative0,
-  //       [tokenAddress1]: priceCumulative1,
-  //     },
-  //   ] = await Promise.all([
-  //     event.getBlock(),
-  //     this.getPairCumulativePrices(pairAddress),
-  //   ])
-
-  //   if (!this.pairAddressToPriceData[pairAddress]) {
-  //     this.pairAddressToPriceData[pairAddress] = []
-  //   }
-
-  //   const reserve0 = new BigNumber(xReserve0.toString())
-  //   const reserve1 = new BigNumber(xReserve1.toString())
-  //   const lastDataPoint = this.pairAddressToPriceData[pairAddress][this.pairAddressToPriceData[pairAddress].length - 1]
-
-  //   this.pairAddressToPriceData[pairAddress].push({
-  //     timestamp,
-  //     reserve0,
-  //     reserve1,
-  //     priceCumulative0,
-  //     priceCumulative1,
-  //   })
-
-  //   if (!lastDataPoint || timestamp === lastDataPoint.timestamp) return null
-
-  //   return {
-  //     timestamp,
-  //     [tokenAddress0]: {
-  //       reserve: reserve0,
-  //       timeWeightedAveragePrice: (priceCumulative0.minus(lastDataPoint.priceCumulative0)).div(timestamp - lastDataPoint.timestamp),
-  //     },
-  //     [tokenAddress1]: {
-  //       reserve: reserve1,
-  //       timeWeightedAveragePrice: (priceCumulative1.minus(lastDataPoint.priceCumulative1)).div(timestamp - lastDataPoint.timestamp),
-  //     },
-  //   }
-  // }
-
-  /* ---
-    LIFECYCLE
-  --- */
-
-  async startListeningToWrappedNativePriceUpdates() {
-    const { wrappedNativeTokenAddress } = this.dexters.chainMetadata
-
-    if (!wrappedNativeTokenAddress) {
-      throw new Error(`[Dexters] ${this.dexters.chainId} ${this.dexId} wrappedNativeTokenAddress not set for this blockchain`)
     }
 
-    const wrappedNativeTokenSymbol = this.getToken(wrappedNativeTokenAddress).symbol
+    if (!(price0 && price1)) {
+      console.warn(`[Dexters|${this.chainId}|${this.dexId}|Oracle] No price data for ${pairAddress}`)
 
-    console.log(`[Dexters|${this.chainId}|${this.dexId}] Listening to wrapped native price updates: ${wrappedNativeTokenSymbol}`)
+      return
+    }
 
-    this.unlistenToWrappedNativePriceUpdates = await this.addStablecoinPriceListener(wrappedNativeTokenAddress, ({ timestamp, price }) => {
-      console.log(`[Dexters|${this.chainId}|${this.dexId}] ${wrappedNativeTokenSymbol} price update`, price.toString())
-
-      this.wrappedNativePriceInUsd = price
-      this.wrappedNativePriceInUsdTimestamp = timestamp
+    callback({
+      timestamp,
+      [tokenAddress0]: {
+        price: price0,
+        reserve: reserve0,
+      },
+      [tokenAddress1]: {
+        price: price1,
+        reserve: reserve1,
+      },
     })
   }
 
-  stopListeningToWrappedNativePriceUpdates() {
-    this.unlistenToWrappedNativePriceUpdates()
-  }
 }
 
 module.exports = Dexters

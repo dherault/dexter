@@ -12,13 +12,21 @@ async function main() {
 
   const sushiswap = dexter.getDex('sushiswap')
 
-  await sushiswap.startListeningToWrappedNativePriceUpdates()
+  let wrappedNativePriceUSD
+
+  await sushiswap.addStablecoinsOracleListener(({ timestamp, priceUSD }) => {
+    console.log('Wrapped native USD', timestamp, priceUSD.toString())
+
+    wrappedNativePriceUSD = priceUSD
+  })
 
   const wethAddress = sushiswap.getToken('WETH').address
+  const sushiAddress = sushiswap.getToken('SUSHI').address
 
-  await sushiswap.addWrappedNativePriceListener(wethAddress, ({ timestamp, price }) => {
-    console.log('WETH', timestamp, price.toString())
-    console.log('WETH', timestamp, price.times(sushiswap.wrappedNativePriceInUsd).toString(), '$')
+  const wethSushiPairAddress = await sushiswap.getPairAddress(wethAddress, sushiAddress)
+
+  await sushiswap.addOracleListener(wethSushiPairAddress, data => {
+    console.log('WETH-SUSHI', data.timestamp, data[wethAddress].price.toString(), data[sushiAddress].price.toString())
   })
 }
 

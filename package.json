@@ -2,7 +2,7 @@
   "name": "dexters",
   "version": "0.2.0",
   "description": "Query any dex data directly on the blockchain",
-  "main": "index.js",
+  "main": "src/Dexters.js",
   "scripts": {
     "start": "node example.js",
     "start:watch": "npm run dev",

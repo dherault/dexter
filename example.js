@@ -1,4 +1,4 @@
-const Dexters = require('.')
+const Dexters = require('./src/Dexters')
 
 async function main() {
   const dexter = new Dexters(137) // Polygon mainnet
@@ -15,7 +15,7 @@ async function main() {
   let wrappedNativePriceUSD
 
   await sushiswap.addStablecoinsOracleListener(({ timestamp, priceUSD }) => {
-    console.log('MATIC and WMATIC $ price:', timestamp, priceUSD.toString())
+    console.log('MATIC $ price:', timestamp, priceUSD.toString())
 
     wrappedNativePriceUSD = priceUSD
   })

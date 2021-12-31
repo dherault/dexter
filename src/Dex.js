@@ -13,10 +13,6 @@ class Dex {
     this.metadata = require(`blockchain-datasets/data/dexes/${dexId}/metadata.json`)
     this.contractNameToContractMetadata = require(`blockchain-datasets/data/dexes/${dexId}/contracts/${chainId}.json`)
 
-    const pairFactoryContractMetadata = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.factory]
-
-    this.pairFactoryContract = new ethers.Contract(pairFactoryContractMetadata.address, pairFactoryContractMetadata.abi, this.dexters.provider)
-
     this.stablecoinAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/stablecoins/${chainId}.json`)
     this.tokenAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/tokens/${chainId}.json`)
     this.tokenSymbolToMetadata = {}
@@ -25,15 +21,15 @@ class Dex {
       this.tokenSymbolToMetadata[tokenInfo.symbol] = tokenInfo
     })
 
+    // Contracts
+    this.routerContract = null
+    this.factoryContract = null
     this.pairAddressToContract = {}
+
+    // Pair
     this.pairAddressToListenerToUnlistener = {}
     this.pairAddressToTokenAddresses = {}
     this.tokenAddress0ToTokenAddress1ToPairAddress = {}
-    this.pairAddressToPriceData = {}
-
-    this.unlistenToWrappedNativePriceUpdates = () => null
-    this.wrappedNativePriceInUsd = null
-    this.wrappedNativePriceInUsdTimestamp = null
   }
 
   /* ---
@@ -45,106 +41,28 @@ class Dex {
   }
 
   /* ---
-    PAIRS
-  --- */
-
-  registerPair(pairAddress, tokenAddress0, tokenAddress1) {
-    this.pairAddressToTokenAddresses[pairAddress] = [tokenAddress0, tokenAddress1]
-
-    if (!this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0]) {
-      this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0] = {}
-    }
-
-    if (!this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress1]) {
-      this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress1] = {}
-    }
-
-    this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1] = pairAddress
-    this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress1][tokenAddress0] = pairAddress
-  }
-
-  getPairTokenAddresses(pairAddress) {
-    return this.pairAddressToTokenAddresses[pairAddress] || []
-  }
-
-  async getPairAddress(tokenAddress0, tokenAddress1) {
-    if (this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0] && this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1]) {
-      return this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1]
-    }
-
-    const pairAddress = await this.pairFactoryContract.getPair(tokenAddress0, tokenAddress1)
-
-    this.registerPair(pairAddress, tokenAddress0, tokenAddress1)
-
-    return pairAddress
-  }
-
-  async getAllPairAddresses() {
-    const pairAddressesPromises = []
-    const tokenAddresses = Object.keys(this.tokenAddressToMetadata)
-
-    for (let i = 0; i < tokenAddresses.length; i++) {
-      const tokenAddress0 = tokenAddresses[i]
-
-      for (let j = i + 1; j < tokenAddresses.length; j++) {
-        const tokenAddress1 = tokenAddresses[j]
-
-        if (this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0] && this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1]) {
-          pairAddressesPromises.push(this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1])
-        }
-        else {
-          pairAddressesPromises.push(
-            this.getPairAddress(tokenAddress0, tokenAddress1)
-            .then(pairAddress => {
-              this.registerPair(pairAddress, tokenAddress0, tokenAddress1)
-
-              return pairAddress
-            })
-          )
-        }
-      }
-    }
-
-    return (await Promise.all(pairAddressesPromises))
-    .filter(pairAddress => pairAddress !== zeroAddress)
-  }
-
-  async getPairTokenAddressesFromContract(pairAddress) {
-    const pairContract = this.getPairContract(pairAddress)
-
-    const [
-      tokenAddress0,
-      tokenAddress1,
-    ] = await Promise.all([
-      pairContract.token0(),
-      pairContract.token1(),
-    ])
-
-    this.registerPair(pairAddress, tokenAddress0, tokenAddress1)
-
-    return { tokenAddress0, tokenAddress1 }
-  }
-
-  async getPairReserves(pairAddress) {
-    const pairContract = this.getPairContract(pairAddress)
-
-    const [
-      { tokenAddress0, tokenAddress1 },
-      { _reserve0, _reserve1 },
-    ] = await Promise.all([
-      this.getPairTokenAddressesFromContract(pairAddress),
-      pairContract.getReserves(),
-    ])
-
-    return {
-      [tokenAddress0]: new BigNumber(_reserve0.toString()),
-      [tokenAddress1]: new BigNumber(_reserve1.toString()),
-    }
-  }
-
-  /* ---
     CONTRACTS
   --- */
+
+  getRouterContract() {
+    if (this.routerContract) {
+      return this.routerContract
+    }
+
+    const routerContractMetadata = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.factory]
+
+    return this.routerContract = new ethers.Contract(routerContractMetadata.address, routerContractMetadata.abi, this.dexters.provider)
+  }
+
+  getFactoryContract() {
+    if (this.factoryContract) {
+      return this.factoryContract
+    }
+
+    const factoryContractMetadata = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.factory]
+
+    return this.factoryContract = new ethers.Contract(factoryContractMetadata.address, factoryContractMetadata.abi, this.dexters.provider)
+  }
 
   getPairContract(pairAddress) {
     if (this.pairAddressToContract[pairAddress]) {
@@ -157,8 +75,105 @@ class Dex {
   }
 
   /* ---
+    PAIR ADDRESS
+  --- */
+
+  async getPairAddresses(pairAddress) {
+    if (this.pairAddressToTokenAddresses[pairAddress]) {
+      return this.pairAddressToTokenAddresses[pairAddress]
+    }
+
+    const pairContract = this.getPairContract(pairAddress)
+
+    const [
+      tokenAddress0,
+      tokenAddress1,
+    ] = await Promise.all([
+      pairContract.token0(),
+      pairContract.token1(),
+    ])
+
+    this._registerPair(pairAddress, tokenAddress0, tokenAddress1)
+
+    return [tokenAddress0, tokenAddress1]
+  }
+
+  async getPairAddress(tokenAddress0, tokenAddress1) {
+    if (this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0] && this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1]) {
+      return this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1]
+    }
+
+    const pairAddress = await this.getFactoryContract().getPair(tokenAddress0, tokenAddress1)
+
+    this._registerPair(pairAddress, tokenAddress0, tokenAddress1)
+
+    return pairAddress
+  }
+
+  /* ---
+    PAIR GETTERS
+  --- */
+
+  async getPairs() {
+    if (this.metadata.contractTypeToContractName.factory === 'UniswapV2Factory') {
+      console.log(`[Dexters|${this.chainId}|${this.dexId}] Getting all pairs on UniswapV2Factory, this could take a while...`)
+
+      const factoryContract = this.getFactoryContract()
+      const nPairsBigNumber = await factoryContract.allPairsLength()
+      const nPairs = new BigNumber(nPairsBigNumber.toString()).toNumber()
+      const pairs = []
+      const increment = 64
+
+      for (let i = 0; i < nPairs; i += increment) {
+        console.log(`[Dexters|${this.chainId}|${this.dexId}] Getting all pairs on UniswapV2Factory, ${i}/${nPairs}`)
+
+        const promises = []
+
+        for (let j = 0; j < increment; j++) {
+          if (i + j < nPairs) {
+            promises.push(factoryContract.allPairs(i + j))
+          }
+        }
+
+        pairs.push(...(await Promise.all(promises)))
+      }
+
+      return pairs
+    }
+
+    throw new Error(`Unimplemented factory: ${this.metadata.contractTypeToContractName.factory}`)
+  }
+
+  async getPairReserves(pairAddress) {
+    const pairContract = this.getPairContract(pairAddress)
+
+    const [
+      [tokenAddress0, tokenAddress1],
+      { _reserve0, _reserve1 },
+    ] = await Promise.all([
+      this.getPairAddresses(pairAddress),
+      pairContract.getReserves(),
+    ])
+
+    return {
+      [tokenAddress0]: new BigNumber(_reserve0.toString()),
+      [tokenAddress1]: new BigNumber(_reserve1.toString()),
+    }
+  }
+
+  /* ---
     ORACLE
   --- */
+
+  async addOracleListener(tokenAddress0OrPairAddress, tokenAddress1OrCallback, callback) {
+    if (typeof tokenAddress1OrCallback === 'function') {
+      return this.addPairListener(tokenAddress0OrPairAddress, syncEventData => this.oracle(tokenAddress0OrPairAddress, syncEventData, tokenAddress1OrCallback))
+    }
+
+    const pairAddress = await this.getPairAddress(tokenAddress0OrPairAddress, tokenAddress1OrCallback)
+
+    return this.addPairListener(pairAddress, syncEventData => this.oracle(pairAddress, syncEventData, callback))
+  }
 
   async addStablecoinsOracleListener(callback) {
     const { wrappedNativeTokenAddress } = this.dexters.chainMetadata
@@ -204,16 +219,6 @@ class Dex {
     return () => unlisteners.forEach(unlistener => unlistener())
   }
 
-  async addPairOracleListener(pairAddress, callback) {
-    return this.addPairListener(pairAddress, syncEventData => this.oracle(pairAddress, syncEventData, callback))
-  }
-
-  async addOracleListener(tokenAddress0, tokenAddress1, callback) {
-    const pairAddress = await this.getPairAddress(tokenAddress0, tokenAddress1)
-
-    return this.addPairListener(pairAddress, syncEventData => this.oracle(pairAddress, syncEventData, callback))
-  }
-
   async addPairListener(pairAddress, callback) {
     if (!this.pairAddressToListenerToUnlistener[pairAddress]) {
       this.pairAddressToListenerToUnlistener[pairAddress] = new Map()
@@ -224,7 +229,7 @@ class Dex {
     }
 
     const pairContract = this.getPairContract(pairAddress)
-    const { tokenAddress0, tokenAddress1 } = await this.getPairTokenAddressesFromContract(pairAddress)
+    const [tokenAddress0, tokenAddress1] = await this.getPairAddresses(pairAddress)
 
     const listener = async (reserve0, reserve1, event) => {
       const { timestamp } = await event.getBlock()
@@ -273,7 +278,7 @@ class Dex {
     }
 
     if (!(price0 && price1)) {
-      console.warn(`[Dexters|${this.chainId}|${this.dexId}|Oracle] No price data for ${pairAddress}`)
+      console.warn(`[Dexters|${this.chainId}|${this.dexId}] No oracle price was computed for ${pairAddress}`)
 
       return
     }
@@ -289,6 +294,25 @@ class Dex {
         reserve: reserve1,
       },
     })
+  }
+
+  /* ---
+    HELPERS
+  --- */
+
+  _registerPair(pairAddress, tokenAddress0, tokenAddress1) {
+    this.pairAddressToTokenAddresses[pairAddress] = [tokenAddress0, tokenAddress1]
+
+    if (!this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0]) {
+      this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0] = {}
+    }
+
+    if (!this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress1]) {
+      this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress1] = {}
+    }
+
+    this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1] = pairAddress
+    this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress1][tokenAddress0] = pairAddress
   }
 
 }

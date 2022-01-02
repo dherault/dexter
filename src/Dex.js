@@ -12,9 +12,9 @@ class Dex {
 
     this.metadata = require(`blockchain-datasets/data/dexes/${dexId}/metadata.json`)
     this.contractNameToContractMetadata = require(`blockchain-datasets/data/dexes/${dexId}/contracts/${chainId}.json`)
-
     this.stablecoinAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/stablecoins/${chainId}.json`)
     this.tokenAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/tokens/${chainId}.json`)
+
     this.tokenSymbolToMetadata = {}
 
     Object.values(this.tokenAddressToMetadata).forEach(tokenInfo => {

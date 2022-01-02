@@ -1,6 +1,6 @@
 {
   "name": "dexters",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Query any dex data directly on the blockchain",
   "main": "src/Dexters.js",
   "scripts": {
@@ -26,11 +26,11 @@
   "homepage": "https://github.com/dherault/dexter#readme",
   "dependencies": {
     "bignumber.js": "^9.0.2",
-    "blockchain-datasets": "^1.3.0",
+    "blockchain-datasets": "^1.3.1",
     "ethers": "^5.5.2"
   },
   "devDependencies": {
-    "eslint": "^8.6.0",
+    "eslint": "^7.x.x",
     "eslint-config-dherault": "^1.6.0",
     "nodemon": "^2.0.15"
   }

@@ -1,7 +1,7 @@
 const Dexters = require('./src/Dexters')
 
 async function main() {
-  const dexter = new Dexters(137) // Polygon mainnet
+  const dexter = new Dexters(1666600000) // Polygon mainnet
   const currencySymbol = dexter.chainMetadata.nativeCurrency.symbol
 
   console.log('currencySymbol', currencySymbol)
@@ -16,26 +16,26 @@ async function main() {
 
   console.log('pairs', pairs)
 
-  const increment = 64
-  const pairAddressToTokenAddresses = {}
+  // const increment = 64
+  // const pairAddressToTokenAddresses = {}
 
-  for (let i = 0; i < pairs.length; i += increment) {
-    console.log(`Deconstructing pairs, ${i}/${pairs.length}`)
+  // for (let i = 0; i < pairs.length; i += increment) {
+  //   console.log(`Deconstructing pairs, ${i}/${pairs.length}`)
 
-    const promises = []
+  //   const promises = []
 
-    for (let j = 0; j < increment; j++) {
-      if (i + j < pairs.length) {
-        promises.push(sushiswap.getPairAddresses(pairs[i + j]))
-      }
-    }
+  //   for (let j = 0; j < increment; j++) {
+  //     if (i + j < pairs.length) {
+  //       promises.push(sushiswap.getPairAddresses(pairs[i + j]))
+  //     }
+  //   }
 
-    (await Promise.all(promises)).forEach((tokenAddresses, j) => {
-      pairAddressToTokenAddresses[pairs[i + j]] = tokenAddresses
-    })
-  }
+  //   (await Promise.all(promises)).forEach((tokenAddresses, j) => {
+  //     pairAddressToTokenAddresses[pairs[i + j]] = tokenAddresses
+  //   })
+  // }
 
-  console.log('pairAddressToTokenAddresses', pairAddressToTokenAddresses)
+  // console.log('pairAddressToTokenAddresses', pairAddressToTokenAddresses)
 
   // let wrappedNativePriceUSD
 

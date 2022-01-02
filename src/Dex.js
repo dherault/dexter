@@ -121,7 +121,7 @@ class Dex {
       const factoryContract = this.getFactoryContract()
       const nPairsBigNumber = await factoryContract.allPairsLength()
       const nPairs = new BigNumber(nPairsBigNumber.toString()).toNumber()
-      const pairs = []
+      const pairs = {}
       const increment = 64
 
       for (let i = 0; i < nPairs; i += increment) {
@@ -131,11 +131,19 @@ class Dex {
 
         for (let j = 0; j < increment; j++) {
           if (i + j < nPairs) {
-            promises.push(factoryContract.allPairs(i + j))
+            promises.push(
+              factoryContract.allPairs(i + j)
+              .then(pairAddress => (
+                this.getPairAddresses(pairAddress)
+                .then(tokenAddresses => ({
+                  [pairAddress]: tokenAddresses,
+                }))
+              ))
+            )
           }
         }
 
-        pairs.push(...(await Promise.all(promises)))
+        Object.assign(pairs, ...(await Promise.all(promises)))
       }
 
       return pairs

@@ -1,6 +1,8 @@
 const { ethers } = require('ethers')
 const BigNumber = require('bignumber.js')
 
+const erc20Abi = require('blockchain-datasets/data/abis/ERC20.json')
+
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 
 class Dex {
@@ -16,6 +18,8 @@ class Dex {
     this.tokenAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/tokens/${chainId}.json`)
 
     this.tokenSymbolToMetadata = {}
+    this.tokenAddressToTokenSymbol = {}
+    this.tokenAddressToTokenDecimals = {}
 
     Object.values(this.tokenAddressToMetadata).forEach(tokenInfo => {
       this.tokenSymbolToMetadata[tokenInfo.symbol] = tokenInfo
@@ -25,6 +29,7 @@ class Dex {
     this.routerContract = null
     this.factoryContract = null
     this.pairAddressToContract = {}
+    this.tokenAddressToContract = {}
 
     // Pair
     this.pairAddressToListenerToUnlistener = {}
@@ -36,8 +41,25 @@ class Dex {
     TOKENS
   --- */
 
+  // ! deprecated
   getToken(symbolOrAddress) {
     return this.tokenSymbolToMetadata[symbolOrAddress] || this.tokenAddressToMetadata[symbolOrAddress]
+  }
+
+  async getTokenSymbol(tokenAddress) {
+    if (this.tokenAddressToTokenSymbol[tokenAddress]) {
+      return this.tokenAddressToTokenSymbol[tokenAddress]
+    }
+
+    return this.tokenAddressToTokenSymbol[tokenAddress] = await this.getPairContract(tokenAddress).symbol()
+  }
+
+  async getTokenDecimals(tokenAddress) {
+    if (this.tokenAddressToTokenDecimals[tokenAddress]) {
+      return this.tokenAddressToTokenDecimals[tokenAddress]
+    }
+
+    return this.tokenAddressToTokenDecimals[tokenAddress] = await this.getPairContract(tokenAddress).decimals()
   }
 
   /* ---
@@ -49,7 +71,7 @@ class Dex {
       return this.routerContract
     }
 
-    const routerContractMetadata = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.factory]
+    const routerContractMetadata = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.router]
 
     return this.routerContract = new ethers.Contract(routerContractMetadata.address, routerContractMetadata.abi, this.dexters.provider)
   }
@@ -72,6 +94,14 @@ class Dex {
     const pairContractMetadata = this.contractNameToContractMetadata[this.metadata.contractTypeToContractName.pair]
 
     return this.pairAddressToContract[pairAddress] = new ethers.Contract(pairAddress, pairContractMetadata.abi, this.dexters.provider)
+  }
+
+  getTokenContract(tokenAddress) {
+    if (this.tokenAddressToContract[tokenAddress]) {
+      return this.tokenAddressToContract[tokenAddress]
+    }
+
+    return this.tokenAddressToContract[tokenAddress] = new ethers.Contract(tokenAddress, erc20Abi, this.dexters.provider)
   }
 
   /* ---
@@ -104,6 +134,10 @@ class Dex {
     }
 
     const pairAddress = await this.getFactoryContract().getPair(tokenAddress0, tokenAddress1)
+
+    if (pairAddress === zeroAddress) {
+      throw new Error(`[Dexters|${this.chainId}|${this.dexId}] No pair found for ${tokenAddress0} and ${tokenAddress1}`)
+    }
 
     this._registerPair(pairAddress, tokenAddress0, tokenAddress1)
 
@@ -240,10 +274,10 @@ class Dex {
     const [tokenAddress0, tokenAddress1] = await this.getPairAddresses(pairAddress)
 
     const listener = async (reserve0, reserve1, event) => {
-      const { timestamp } = await event.getBlock()
+      const block = await event.getBlock()
 
       callback({
-        timestamp,
+        timestamp: block ? block.timestamp : null,
         [tokenAddress0]: new BigNumber(reserve0.toString()),
         [tokenAddress1]: new BigNumber(reserve1.toString()),
       })
@@ -258,8 +292,8 @@ class Dex {
     return unlistener
   }
 
-  oracle(pairAddress, syncEventData, callback) {
-    const [tokenAddress0, tokenAddress1] = this.getPairTokenAddresses(pairAddress)
+  async oracle(pairAddress, syncEventData, callback) {
+    const [tokenAddress0, tokenAddress1] = await this.getPairAddresses(pairAddress)
 
     const {
       timestamp,
@@ -267,23 +301,7 @@ class Dex {
       [tokenAddress1]: reserve1,
     } = syncEventData
 
-    let price0
-    let price1
-    const decimal0 = new BigNumber(`1e+${this.getToken(tokenAddress0).decimals}`)
-    const decimal1 = new BigNumber(`1e+${this.getToken(tokenAddress1).decimals}`)
-
-    if (reserve0.gt(0)) {
-      price0 = decimal0
-        .div(decimal1)
-        .times(reserve1)
-        .div(reserve0)
-    }
-    if (reserve1.gt(0)) {
-      price1 = decimal1
-        .div(decimal0)
-        .times(reserve0)
-        .div(reserve1)
-    }
+    const [price0, price1] = await this._computeRelativePrices(tokenAddress0, tokenAddress1, reserve0, reserve1)
 
     if (!(price0 && price1)) {
       console.warn(`[Dexters|${this.chainId}|${this.dexId}] No oracle price was computed for ${pairAddress}`)
@@ -304,6 +322,22 @@ class Dex {
     })
   }
 
+  async getCurrentRelativePrices(tokenAddress0, tokenAddress1) {
+    const pairAddress = await this.getPairAddress(tokenAddress0, tokenAddress1)
+
+    const {
+      [tokenAddress0]: reserve0,
+      [tokenAddress1]: reserve1,
+    } = await this.getPairReserves(pairAddress)
+
+    const [price0, price1] = await this._computeRelativePrices(tokenAddress0, tokenAddress1, reserve0, reserve1)
+
+    return {
+      [tokenAddress0]: price0,
+      [tokenAddress1]: price1,
+    }
+  }
+
   /* ---
     HELPERS
   --- */
@@ -321,6 +355,30 @@ class Dex {
 
     this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1] = pairAddress
     this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress1][tokenAddress0] = pairAddress
+  }
+
+  async _computeRelativePrices(tokenAddress0, tokenAddress1, reserve0, reserve1) {
+    const [decimals0, decimals1] = await Promise.all(
+      [tokenAddress0, tokenAddress1].map(tokenAddress => this.getTokenDecimals(tokenAddress).then(x => new BigNumber(`1e+${x}`)))
+    )
+
+    let price0
+    let price1
+
+    if (reserve0.gt(0)) {
+      price0 = decimals0
+        .div(decimals1)
+        .times(reserve1)
+        .div(reserve0)
+    }
+    if (reserve1.gt(0)) {
+      price1 = decimals1
+        .div(decimals0)
+        .times(reserve0)
+        .div(reserve1)
+    }
+
+    return [price0, price1]
   }
 
 }

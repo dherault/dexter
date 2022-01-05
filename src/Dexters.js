@@ -41,6 +41,7 @@ class Dexters {
     return this.tokenSymbolToMetadata[symbolOrAddress] || this.tokenAddressToMetadata[symbolOrAddress]
   }
 
+  // ! deprecated
   getCrossTokens(dexId0, dexId1) {
     const dex0 = this.getDex(dexId0)
     const dex1 = this.getDex(dexId1)

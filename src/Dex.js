@@ -274,13 +274,18 @@ class Dex {
     const [tokenAddress0, tokenAddress1] = await this.getPairAddresses(pairAddress)
 
     const listener = async (reserve0, reserve1, event) => {
-      const block = await event.getBlock()
+      try {
+        const block = await event.getBlock()
 
-      callback({
-        timestamp: block ? block.timestamp : null,
-        [tokenAddress0]: new BigNumber(reserve0.toString()),
-        [tokenAddress1]: new BigNumber(reserve1.toString()),
-      })
+        callback({
+          timestamp: block ? block.timestamp : null,
+          [tokenAddress0]: new BigNumber(reserve0.toString()),
+          [tokenAddress1]: new BigNumber(reserve1.toString()),
+        })
+      }
+      catch (error) {
+        // Ignore
+      }
     }
 
     pairContract.on('Sync', listener)

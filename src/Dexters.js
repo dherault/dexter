@@ -7,10 +7,16 @@ const Dex = require('./Dex')
 class Dexters {
 
   constructor(blockchainId, provider) {
-    this.blockchainId = blockchainId
-    this.blockchainMetadata = require(`blockchain-datasets/data/blockchains/${blockchainId}/metadata.json`)
+    if (!blockchainId) {
+      throw new Error('[Dexters] Pass a blockchain id as the first argument')
+    }
 
-    if (!this.blockchainMetadata) {
+    this.blockchainId = blockchainId
+
+    try {
+      this.blockchainMetadata = require(`blockchain-datasets/data/blockchains/${blockchainId}/metadata.json`)
+    }
+    catch (error) {
       throw new Error(`[Dexters|${blockchainId}] Unsupported blockchainId`)
     }
 

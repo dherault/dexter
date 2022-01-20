@@ -173,6 +173,7 @@ class Dex {
         }
         catch (error) {
           this.logError('Error getting all pairs on UniswapV2Factory)')
+          this.logError(error.message)
         }
       }
 

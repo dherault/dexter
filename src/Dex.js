@@ -25,9 +25,9 @@ class Dex {
     this.pairAddressToTokenAddresses = {}
     this.tokenAddress0ToTokenAddress1ToPairAddress = {}
 
-    this.log = (...args) => console.log(`${chalk.blue('[Dexters|')}${chalk.yellow(this.dexters.blockchainId)}${chalk.blue(`|${this.dexId}]`)}`, ...args)
-    this.logError = (...args) => console.log(`${chalk.red('[Dexters|')}${chalk.yellow(this.dexters.blockchainId)}${chalk.red(`|${this.dexId}]`)}`, ...args)
-    this.logWarn = (...args) => console.log(`${chalk.gray('[Dexters|')}${chalk.yellow(this.dexters.blockchainId)}${chalk.gray(`|${this.dexId}]`)}`, ...args)
+    this.log = (...args) => console.log(chalk.blue(`[Dexters|${this.dexters.blockchainId}|${this.dexId}]`), ...args)
+    this.logError = (...args) => console.log(chalk.red(`[Dexters|${this.dexters.blockchainId}|${this.dexId}]`), ...args)
+    this.logWarn = (...args) => console.log(chalk.gray(`[Dexters|${this.dexters.blockchainId}|${this.dexId}]`), ...args)
   }
 
   /* ---

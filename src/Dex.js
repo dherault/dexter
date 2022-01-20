@@ -1,5 +1,6 @@
 const { ethers } = require('ethers')
 const BigNumber = require('bignumber.js')
+const chalk = require('chalk')
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 
@@ -23,6 +24,10 @@ class Dex {
     // Pairs cache
     this.pairAddressToTokenAddresses = {}
     this.tokenAddress0ToTokenAddress1ToPairAddress = {}
+
+    this.log = (...args) => console.log(`${chalk.blue('[Dexters|')}${chalk.yellow(this.dexters.blockchainId)}${chalk.blue(`|${this.dexId}]`)}`, ...args)
+    this.logError = (...args) => console.log(`${chalk.red('[Dexters|')}${chalk.yellow(this.dexters.blockchainId)}${chalk.red(`|${this.dexId}]`)}`, ...args)
+    this.logWarn = (...args) => console.log(`${chalk.gray('[Dexters|')}${chalk.yellow(this.dexters.blockchainId)}${chalk.gray(`|${this.dexId}]`)}`, ...args)
   }
 
   /* ---
@@ -128,7 +133,7 @@ class Dex {
 
   async getPairs() {
     if (this.isUniswapV2) {
-      console.log(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Getting all pairs on UniswapV2Factory, this could take a while...`)
+      this.log('Getting all pairs on UniswapV2Factory, this could take a while...')
 
       const factoryContract = this.getFactoryContract()
       let nPairsBigNumber = 0
@@ -137,7 +142,7 @@ class Dex {
         nPairsBigNumber = await factoryContract.allPairsLength()
       }
       catch (error) {
-        console.error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Error getting allPairsLength on UniswapV2Factory)`)
+        this.logError('Error getting allPairsLength on UniswapV2Factory)')
       }
 
       const nPairs = new BigNumber(nPairsBigNumber.toString()).toNumber()
@@ -145,7 +150,7 @@ class Dex {
       const increment = 64
 
       for (let i = 0; i < nPairs; i += increment) {
-        console.log(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Getting all pairs on UniswapV2Factory, ${i}/${nPairs}`)
+        this.log(`Getting all pairs on UniswapV2Factory, ${i}/${nPairs}`)
 
         const promises = []
 
@@ -167,7 +172,7 @@ class Dex {
           Object.assign(pairs, ...(await Promise.all(promises)))
         }
         catch (error) {
-          console.error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Error getting all pairs on UniswapV2Factory)`)
+          this.logError('Error getting all pairs on UniswapV2Factory)')
         }
       }
 
@@ -431,7 +436,7 @@ class Dex {
     } = syncEventData
 
     if (!(rawReserve0 && rawReserve1)) {
-      console.warn(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No oracle reserve was synced for ${pairAddress}`)
+      this.logWarn(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No oracle reserve was synced for ${pairAddress}`)
 
       return
     }
@@ -440,7 +445,7 @@ class Dex {
     const reserve1 = new BigNumber(rawReserve1.toString())
 
     if (reserve0.isEqualTo(0) || reserve1.isEqualTo(0)) {
-      console.warn(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No oracle reserve was computed for ${pairAddress}`)
+      this.logWarn(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No oracle reserve was computed for ${pairAddress}`)
 
       return
     }
@@ -448,7 +453,7 @@ class Dex {
     const [price0, price1] = await this._computeRelativePrices(tokenAddress0, tokenAddress1, reserve0, reserve1)
 
     if (!(price0 && price1)) {
-      console.warn(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No oracle price was computed for ${pairAddress}`)
+      this.logWarn(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No oracle price was computed for ${pairAddress}`)
 
       return
     }

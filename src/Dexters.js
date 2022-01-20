@@ -6,7 +6,7 @@ const Dex = require('./Dex')
 // Dexters is a middleware to the blockchain
 class Dexters {
 
-  constructor(blockchainId) {
+  constructor(blockchainId, provider) {
     this.blockchainId = blockchainId
     this.blockchainMetadata = require(`blockchain-datasets/data/blockchains/${blockchainId}/metadata.json`)
 
@@ -15,7 +15,7 @@ class Dexters {
     }
 
     // Provider
-    this.provider = new ethers.providers.JsonRpcProvider(this.blockchainMetadata.rpc[0])
+    this.provider = provider || new ethers.providers.JsonRpcProvider(this.blockchainMetadata.rpc[0])
 
     // Dexes
     this.dexIdToDex = {}

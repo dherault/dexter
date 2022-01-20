@@ -1,65 +1,28 @@
 const { ethers } = require('ethers')
 const BigNumber = require('bignumber.js')
 
-const erc20Abi = require('blockchain-datasets/data/abis/ERC20.json')
-
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 
 class Dex {
 
-  constructor(dexters, chainId, dexId) {
-    this.chainId = chainId
-    this.dexId = dexId
+  constructor(dexters, dexId) {
     this.dexters = dexters
+    this.dexId = dexId
 
+    // Metadata
     this.metadata = require(`blockchain-datasets/data/dexes/${dexId}/metadata.json`)
-    this.contractNameToContractMetadata = require(`blockchain-datasets/data/dexes/${dexId}/contracts/${chainId}.json`)
-    this.stablecoinAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/stablecoins/${chainId}.json`)
-    this.tokenAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/tokens/${chainId}.json`)
+    this.contractNameToContractMetadata = require(`blockchain-datasets/data/dexes/${dexId}/contracts/${this.dexters.blockchainId}.json`)
+    this.stablecoinAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/stablecoins/${this.dexters.blockchainId}.json`)
+    this.isUniswapV2 = this.metadata.contractTypeToContractName.factory === 'UniswapV2Factory'
 
-    this.tokenSymbolToMetadata = {}
-    this.tokenAddressToTokenSymbol = {}
-    this.tokenAddressToTokenDecimals = {}
-
-    Object.values(this.tokenAddressToMetadata).forEach(tokenInfo => {
-      this.tokenSymbolToMetadata[tokenInfo.symbol] = tokenInfo
-    })
-
-    // Contracts
+    // Contracts cache
     this.routerContract = null
     this.factoryContract = null
     this.pairAddressToContract = {}
-    this.tokenAddressToContract = {}
 
-    // Pair
-    this.pairAddressToListenerToUnlistener = {}
+    // Pairs cache
     this.pairAddressToTokenAddresses = {}
     this.tokenAddress0ToTokenAddress1ToPairAddress = {}
-  }
-
-  /* ---
-    TOKENS
-  --- */
-
-  // ! deprecated
-  getToken(symbolOrAddress) {
-    return this.tokenSymbolToMetadata[symbolOrAddress] || this.tokenAddressToMetadata[symbolOrAddress]
-  }
-
-  async getTokenSymbol(tokenAddress) {
-    if (this.tokenAddressToTokenSymbol[tokenAddress]) {
-      return this.tokenAddressToTokenSymbol[tokenAddress]
-    }
-
-    return this.tokenAddressToTokenSymbol[tokenAddress] = await this.getPairContract(tokenAddress).symbol()
-  }
-
-  async getTokenDecimals(tokenAddress) {
-    if (this.tokenAddressToTokenDecimals[tokenAddress]) {
-      return this.tokenAddressToTokenDecimals[tokenAddress]
-    }
-
-    return this.tokenAddressToTokenDecimals[tokenAddress] = await this.getPairContract(tokenAddress).decimals()
   }
 
   /* ---
@@ -96,52 +59,67 @@ class Dex {
     return this.pairAddressToContract[pairAddress] = new ethers.Contract(pairAddress, pairContractMetadata.abi, this.dexters.provider)
   }
 
-  getTokenContract(tokenAddress) {
-    if (this.tokenAddressToContract[tokenAddress]) {
-      return this.tokenAddressToContract[tokenAddress]
-    }
-
-    return this.tokenAddressToContract[tokenAddress] = new ethers.Contract(tokenAddress, erc20Abi, this.dexters.provider)
-  }
-
   /* ---
     PAIR ADDRESS
   --- */
 
+  // From a pair address to tokens addresses
   async getPairAddresses(pairAddress) {
-    if (this.pairAddressToTokenAddresses[pairAddress]) {
-      return this.pairAddressToTokenAddresses[pairAddress]
+    if (this.isUniswapV2) {
+      if (this.pairAddressToTokenAddresses[pairAddress]) {
+        return this.pairAddressToTokenAddresses[pairAddress]
+      }
+
+      const pairContract = this.getPairContract(pairAddress)
+
+      try {
+        const [
+          tokenAddress0,
+          tokenAddress1,
+        ] = await Promise.all([
+          pairContract.token0(),
+          pairContract.token1(),
+        ])
+
+        this._registerPair(pairAddress, tokenAddress0, tokenAddress1)
+
+        return [tokenAddress0, tokenAddress1]
+      }
+      catch (error) {
+        return [] // !
+      }
     }
 
-    const pairContract = this.getPairContract(pairAddress)
-
-    const [
-      tokenAddress0,
-      tokenAddress1,
-    ] = await Promise.all([
-      pairContract.token0(),
-      pairContract.token1(),
-    ])
-
-    this._registerPair(pairAddress, tokenAddress0, tokenAddress1)
-
-    return [tokenAddress0, tokenAddress1]
+    throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Unsupported pair contract type`)
   }
 
+  // From token addresses to pair address
   async getPairAddress(tokenAddress0, tokenAddress1) {
-    if (this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0] && this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1]) {
-      return this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1]
+    if (this.isUniswapV2) {
+      if (this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0] && this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1]) {
+        return this.tokenAddress0ToTokenAddress1ToPairAddress[tokenAddress0][tokenAddress1]
+      }
+
+      let pairAddress
+
+      try {
+        pairAddress = await this.getFactoryContract().getPair(tokenAddress0, tokenAddress1)
+      }
+      catch (error) {
+        pairAddress = zeroAddress
+      }
+
+      // Can happen if tokenAddress0 and tokenAddress1 are not paired
+      if (pairAddress === zeroAddress) {
+        throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No pair found for ${tokenAddress0} and ${tokenAddress1}`)
+      }
+
+      this._registerPair(pairAddress, tokenAddress0, tokenAddress1)
+
+      return pairAddress
     }
 
-    const pairAddress = await this.getFactoryContract().getPair(tokenAddress0, tokenAddress1)
-
-    if (pairAddress === zeroAddress) {
-      throw new Error(`[Dexters|${this.chainId}|${this.dexId}] No pair found for ${tokenAddress0} and ${tokenAddress1}`)
-    }
-
-    this._registerPair(pairAddress, tokenAddress0, tokenAddress1)
-
-    return pairAddress
+    throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Unsupported factory contract type`)
   }
 
   /* ---
@@ -149,17 +127,25 @@ class Dex {
   --- */
 
   async getPairs() {
-    if (this.metadata.contractTypeToContractName.factory === 'UniswapV2Factory') {
-      console.log(`[Dexters|${this.chainId}|${this.dexId}] Getting all pairs on UniswapV2Factory, this could take a while...`)
+    if (this.isUniswapV2) {
+      console.log(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Getting all pairs on UniswapV2Factory, this could take a while...`)
 
       const factoryContract = this.getFactoryContract()
-      const nPairsBigNumber = await factoryContract.allPairsLength()
+      let nPairsBigNumber = 0
+
+      try {
+        nPairsBigNumber = await factoryContract.allPairsLength()
+      }
+      catch (error) {
+        console.error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Error getting allPairsLength on UniswapV2Factory)`)
+      }
+
       const nPairs = new BigNumber(nPairsBigNumber.toString()).toNumber()
       const pairs = {}
       const increment = 64
 
       for (let i = 0; i < nPairs; i += increment) {
-        console.log(`[Dexters|${this.chainId}|${this.dexId}] Getting all pairs on UniswapV2Factory, ${i}/${nPairs}`)
+        console.log(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Getting all pairs on UniswapV2Factory, ${i}/${nPairs}`)
 
         const promises = []
 
@@ -177,51 +163,57 @@ class Dex {
           }
         }
 
-        Object.assign(pairs, ...(await Promise.all(promises)))
+        try {
+          Object.assign(pairs, ...(await Promise.all(promises)))
+        }
+        catch (error) {
+          console.error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Error getting all pairs on UniswapV2Factory)`)
+        }
       }
 
       return pairs
     }
 
-    throw new Error(`Unimplemented factory: ${this.metadata.contractTypeToContractName.factory}`)
+    throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Unsupported factory contract type`)
   }
 
   async getPairReserves(pairAddress) {
-    const pairContract = this.getPairContract(pairAddress)
+    if (this.isUniswapV2) {
+      const pairContract = this.getPairContract(pairAddress)
 
-    const [
-      [tokenAddress0, tokenAddress1],
-      { _reserve0, _reserve1 },
-    ] = await Promise.all([
-      this.getPairAddresses(pairAddress),
-      pairContract.getReserves(),
-    ])
+      try {
+        const [
+          [tokenAddress0, tokenAddress1],
+          { _reserve0, _reserve1 },
+        ] = await Promise.all([
+          this.getPairAddresses(pairAddress),
+          pairContract.getReserves(),
+        ])
 
-    return {
-      [tokenAddress0]: new BigNumber(_reserve0.toString()),
-      [tokenAddress1]: new BigNumber(_reserve1.toString()),
+        return {
+          [tokenAddress0]: _reserve0.toString(),
+          [tokenAddress1]: _reserve1.toString(),
+        }
+      }
+      catch (error) {
+        return {}
+      }
     }
+
+    throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Unsupported pair contract type`)
   }
 
   /* ---
-    ORACLE
+    LISTENERS
   --- */
 
-  async addOracleListener(tokenAddress0OrPairAddress, tokenAddress1OrCallback, callback) {
-    if (typeof tokenAddress1OrCallback === 'function') {
-      return this.addPairListener(tokenAddress0OrPairAddress, syncEventData => this.oracle(tokenAddress0OrPairAddress, syncEventData, tokenAddress1OrCallback))
-    }
-
-    const pairAddress = await this.getPairAddress(tokenAddress0OrPairAddress, tokenAddress1OrCallback)
-
-    return this.addPairListener(pairAddress, syncEventData => this.oracle(pairAddress, syncEventData, callback))
-  }
-
-  async addStablecoinsOracleListener(callback) {
-    const { wrappedNativeTokenAddress } = this.dexters.chainMetadata
+  // Add a Sync listener for every stablecoin-wnative pair
+  // Deduce the priceUSD from the weighted average off the wnative relative price
+  async addStablecoinsSyncListener(callback) {
+    const { wrappedNativeTokenAddress } = this.dexters.blockchainMetadata
 
     if (!wrappedNativeTokenAddress) {
-      throw new Error(`[Dexters|${this.dexters.chainId}|${this.dexId}] wrappedNativeTokenAddress not set for this blockchain`)
+      throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] wrappedNativeTokenAddress not set for this blockchain`)
     }
 
     const stablecoinAddresses = Object.keys(this.stablecoinAddressToMetadata)
@@ -229,14 +221,14 @@ class Dex {
     const workingStablecoinPairAddresses = stablecoinPairAddresses.filter(pairAddress => pairAddress !== zeroAddress)
 
     if (workingStablecoinPairAddresses.length === 0) {
-      throw new Error(`[Dexters|${this.chainId}|${this.dexId}] No working stablecoin pairs found for token ${wrappedNativeTokenAddress}`)
+      throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No working stablecoin pairs found for token ${wrappedNativeTokenAddress}`)
     }
 
     const pairAddressToData = {}
 
     // Create a pair listener for every stablecoin
     const unlisteners = await Promise.all(workingStablecoinPairAddresses.map(pairAddress => (
-      this.addPairListener(pairAddress, syncEventData => this.oracle(pairAddress, syncEventData, data => {
+      this._addUniswapV2PairSyncListener(pairAddress, syncEventData => this._oracle(pairAddress, syncEventData, data => {
         pairAddressToData[pairAddress] = data
 
         // The final price is a weighted average of the prices by the reserve
@@ -252,7 +244,7 @@ class Dex {
 
         callback({
           timestamp: data.timestamp,
-          priceUSD: sumWeighted.div(sumReserve),
+          priceUSD: sumWeighted.div(sumReserve).toString(),
         })
       }))
     )))
@@ -261,15 +253,71 @@ class Dex {
     return () => unlisteners.forEach(unlistener => unlistener())
   }
 
-  async addPairListener(pairAddress, callback) {
-    if (!this.pairAddressToListenerToUnlistener[pairAddress]) {
-      this.pairAddressToListenerToUnlistener[pairAddress] = new Map()
+  // TODO handle non-UniswapV2Pair contracts
+  async addSyncListener(tokenAddress0OrPairAddress, tokenAddress1OrCallback, callback) {
+    if (this.isUniswapV2) {
+      if (typeof tokenAddress1OrCallback === 'function') {
+        return this._addUniswapV2PairSyncListener(tokenAddress0OrPairAddress, syncEventData => this._oracle(tokenAddress0OrPairAddress, syncEventData, tokenAddress1OrCallback))
+      }
+
+      const pairAddress = await this.getPairAddress(tokenAddress0OrPairAddress, tokenAddress1OrCallback)
+
+      return this._addUniswapV2PairSyncListener(pairAddress, syncEventData => this._oracle(pairAddress, syncEventData, callback))
     }
 
-    if (this.pairAddressToListenerToUnlistener[pairAddress].has(callback)) {
-      return this.pairAddressToListenerToUnlistener[pairAddress].get(callback)
+    throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Unsupported factory contract type`)
+  }
+
+  // TODO handle non-UniswapV2Pair contracts
+  async addSwapListener(tokenAddress0OrPairAddress, tokenAddress1OrCallback, callback) {
+    if (this.isUniswapV2) {
+      if (typeof tokenAddress1OrCallback === 'function') {
+        return this._addUniswapV2PairSwapListener(tokenAddress0OrPairAddress, tokenAddress1OrCallback)
+      }
+
+      const pairAddress = await this.getPairAddress(tokenAddress0OrPairAddress, tokenAddress1OrCallback)
+
+      return this._addUniswapV2PairSwapListener(pairAddress, callback)
     }
 
+    throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Unsupported factory contract type`)
+  }
+
+  // TODO handle non-UniswapV2Pair contracts
+  async addMintListener(tokenAddress0OrPairAddress, tokenAddress1OrCallback, callback) {
+    if (this.isUniswapV2) {
+      if (typeof tokenAddress1OrCallback === 'function') {
+        return this._addUniswapV2PairMintListener(tokenAddress0OrPairAddress, tokenAddress1OrCallback)
+      }
+
+      const pairAddress = await this.getPairAddress(tokenAddress0OrPairAddress, tokenAddress1OrCallback)
+
+      return this._addUniswapV2PairMintListener(pairAddress, callback)
+    }
+
+    throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Unsupported factory contract type`)
+  }
+
+  // TODO handle non-UniswapV2Pair contracts
+  async addBurnListener(tokenAddress0OrPairAddress, tokenAddress1OrCallback, callback) {
+    if (this.isUniswapV2) {
+      if (typeof tokenAddress1OrCallback === 'function') {
+        return this._addUniswapV2PairBurnListener(tokenAddress0OrPairAddress, tokenAddress1OrCallback)
+      }
+
+      const pairAddress = await this.getPairAddress(tokenAddress0OrPairAddress, tokenAddress1OrCallback)
+
+      return this._addUniswapV2PairBurnListener(pairAddress, callback)
+    }
+
+    throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Unsupported factory contract type`)
+  }
+
+  /* ---
+    INTERNAL LISTENERS
+  --- */
+
+  async _addUniswapV2PairSyncListener(pairAddress, callback) {
     const pairContract = this.getPairContract(pairAddress)
     const [tokenAddress0, tokenAddress1] = await this.getPairAddresses(pairAddress)
 
@@ -279,8 +327,8 @@ class Dex {
 
         callback({
           timestamp: block ? block.timestamp : null,
-          [tokenAddress0]: new BigNumber(reserve0.toString()),
-          [tokenAddress1]: new BigNumber(reserve1.toString()),
+          [tokenAddress0]: reserve0.toString(),
+          [tokenAddress1]: reserve1.toString(),
         })
       }
       catch (error) {
@@ -290,26 +338,117 @@ class Dex {
 
     pairContract.on('Sync', listener)
 
-    const unlistener = () => pairContract.off('Sync', listener)
-
-    this.pairAddressToListenerToUnlistener[pairAddress].set(callback, unlistener)
-
-    return unlistener
+    return () => pairContract.off('Sync', listener)
   }
 
-  async oracle(pairAddress, syncEventData, callback) {
+  async _addUniswapV2PairSwapListener(pairAddress, callback) {
+    const pairContract = this.getPairContract(pairAddress)
+
+    const listener = async (fromAddress, amountIn0, amountIn1, amountOut0, amountOut1, toAddress, event) => {
+      try {
+        const block = await event.getBlock()
+
+        callback({
+          timestamp: block ? block.timestamp : null,
+          fromAddress,
+          toAddress,
+          amountIn0: amountIn0.toString(),
+          amountIn1: amountIn1.toString(),
+          amountOut0: amountOut0.toString(),
+          amountOut1: amountOut1.toString(),
+        })
+      }
+      catch (error) {
+        // Ignore
+      }
+    }
+
+    pairContract.on('Swap', listener)
+
+    return () => pairContract.off('Swap', listener)
+  }
+
+  async _addUniswapV2PairMintListener(pairAddress, callback) {
+    const pairContract = this.getPairContract(pairAddress)
+
+    const listener = async (fromAddress, amount0, amount1, event) => {
+      try {
+        const block = await event.getBlock()
+
+        callback({
+          timestamp: block ? block.timestamp : null,
+          fromAddress,
+          amount0: amount0.toString(),
+          amount1: amount1.toString(),
+        })
+      }
+      catch (error) {
+        // Ignore
+      }
+    }
+
+    pairContract.on('Mint', listener)
+
+    return () => pairContract.off('Mint', listener)
+  }
+
+  async _addUniswapV2PairBurnListener(pairAddress, callback) {
+    const pairContract = this.getPairContract(pairAddress)
+
+    const listener = async (fromAddress, amount0, amount1, toAddress, event) => {
+      try {
+        const block = await event.getBlock()
+
+        callback({
+          timestamp: block ? block.timestamp : null,
+          fromAddress,
+          toAddress,
+          amount0: amount0.toString(),
+          amount1: amount1.toString(),
+        })
+      }
+      catch (error) {
+        // Ignore
+      }
+    }
+
+    pairContract.on('Burn', listener)
+
+    return () => pairContract.off('Burn', listener)
+  }
+
+  /* ---
+    ORACLE
+  --- */
+
+  async _oracle(pairAddress, syncEventData, callback) {
     const [tokenAddress0, tokenAddress1] = await this.getPairAddresses(pairAddress)
 
     const {
       timestamp,
-      [tokenAddress0]: reserve0,
-      [tokenAddress1]: reserve1,
+      [tokenAddress0]: rawReserve0,
+      [tokenAddress1]: rawReserve1,
     } = syncEventData
+
+    if (!(rawReserve0 && rawReserve1)) {
+      console.warn(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No oracle reserve was synced for ${pairAddress}`)
+
+      return
+    }
+
+    const reserve0 = new BigNumber(rawReserve0.toString())
+    const reserve1 = new BigNumber(rawReserve1.toString())
+
+    if (reserve0.isEqualTo(0) || reserve1.isEqualTo(0)) {
+      console.warn(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No oracle reserve was computed for ${pairAddress}`)
+
+      return
+    }
 
     const [price0, price1] = await this._computeRelativePrices(tokenAddress0, tokenAddress1, reserve0, reserve1)
 
     if (!(price0 && price1)) {
-      console.warn(`[Dexters|${this.chainId}|${this.dexId}] No oracle price was computed for ${pairAddress}`)
+      console.warn(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No oracle price was computed for ${pairAddress}`)
 
       return
     }
@@ -317,12 +456,12 @@ class Dex {
     callback({
       timestamp,
       [tokenAddress0]: {
-        price: price0,
-        reserve: reserve0,
+        price: price0.toString(),
+        reserve: reserve0.toString(),
       },
       [tokenAddress1]: {
-        price: price1,
-        reserve: reserve1,
+        price: price1.toString(),
+        reserve: reserve1.toString(),
       },
     })
   }
@@ -331,15 +470,26 @@ class Dex {
     const pairAddress = await this.getPairAddress(tokenAddress0, tokenAddress1)
 
     const {
-      [tokenAddress0]: reserve0,
-      [tokenAddress1]: reserve1,
+      [tokenAddress0]: rawReserve0,
+      [tokenAddress1]: rawReserve1,
     } = await this.getPairReserves(pairAddress)
+
+    const reserve0 = new BigNumber(rawReserve0)
+    const reserve1 = new BigNumber(rawReserve1)
+
+    if (reserve0.isEqualTo(0) || reserve1.isEqualTo(0)) {
+      return {}
+    }
 
     const [price0, price1] = await this._computeRelativePrices(tokenAddress0, tokenAddress1, reserve0, reserve1)
 
+    if (!(price0 && price1)) {
+      throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] No oracle price was computed for ${pairAddress}`)
+    }
+
     return {
-      [tokenAddress0]: price0,
-      [tokenAddress1]: price1,
+      [tokenAddress0]: price0.toString(),
+      [tokenAddress1]: price1.toString(),
     }
   }
 
@@ -364,7 +514,7 @@ class Dex {
 
   async _computeRelativePrices(tokenAddress0, tokenAddress1, reserve0, reserve1) {
     const [decimals0, decimals1] = await Promise.all(
-      [tokenAddress0, tokenAddress1].map(tokenAddress => this.getTokenDecimals(tokenAddress).then(x => new BigNumber(`1e+${x}`)))
+      [tokenAddress0, tokenAddress1].map(tokenAddress => this.dexters.getERC20TokenDecimals(tokenAddress).then(x => new BigNumber(`1e+${x}`)))
     )
 
     let price0

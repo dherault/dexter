@@ -1,63 +1,137 @@
 const { ethers } = require('ethers')
+const ERC20ABI = require('blockchain-datasets/data/abis/ERC20.json')
 
 const Dex = require('./Dex')
 
+// Dexters is a middleware to the blockchain
 class Dexters {
 
-  constructor(chainId) {
-    this.chainId = chainId
-    this.chainMetadata = require(`blockchain-datasets/data/blockchains/${chainId}/metadata.json`)
+  constructor(blockchainId) {
+    this.blockchainId = blockchainId
+    this.blockchainMetadata = require(`blockchain-datasets/data/blockchains/${blockchainId}/metadata.json`)
 
-    if (!this.chainMetadata) {
-      throw new Error(`Unsupported chainId: ${chainId}`)
+    if (!this.blockchainMetadata) {
+      throw new Error(`[Dexters|${blockchainId}] Unsupported blockchainId`)
     }
 
-    this.provider = new ethers.providers.JsonRpcProvider(this.chainMetadata.rpc[0])
+    // Provider
+    this.provider = new ethers.providers.JsonRpcProvider(this.blockchainMetadata.rpc[0])
 
-    this.tokenAddressToMetadata = require(`blockchain-datasets/data/blockchains/${chainId}/tokens.json`)
-    this.stablecoinAddressToMetadata = require(`blockchain-datasets/data/blockchains/${chainId}/stablecoins.json`)
-    this.tokenSymbolToMetadata = {}
-
-    Object.values(this.tokenAddressToMetadata).forEach(tokenInfo => {
-      this.tokenSymbolToMetadata[tokenInfo.symbol] = tokenInfo
-    })
-
+    // Dexes
     this.dexIdToDex = {}
 
     this.getDexIds().forEach(dexId => {
-      this.dexIdToDex[dexId] = new Dex(this, chainId, dexId,)
+      this.dexIdToDex[dexId] = new Dex(this, dexId)
     })
+
+    // Tokens data cache
+    this.tokenAddressToContract = {}
+    this.tokenAddressToTokenName = {}
+    this.tokenAddressToTokenSymbol = {}
+    this.tokenAddressToTokenDecimals = {}
+    this.tokenAddressToTokenCreationBlockTime = {}
   }
 
+  /* ---
+    DEXES
+  --- */
+
+  // Get all the Dex ids
   getDexIds() {
-    return this.chainMetadata.dexes
+    return this.blockchainMetadata.dexes
   }
 
+  // Get a Dex by id
   getDex(id) {
     return this.dexIdToDex[id]
   }
 
-  getToken(symbolOrAddress) {
-    return this.tokenSymbolToMetadata[symbolOrAddress] || this.tokenAddressToMetadata[symbolOrAddress]
+  /* ---
+    TOKENS
+  --- */
+
+  getERC20TokenContract(tokenAddress) {
+    if (this.tokenAddressToContract[tokenAddress]) {
+      return this.tokenAddressToContract[tokenAddress]
+    }
+
+    return this.tokenAddressToContract[tokenAddress] = new ethers.Contract(tokenAddress, ERC20ABI, this.provider)
   }
 
-  // ! deprecated
-  getCrossTokens(dexId0, dexId1) {
-    const dex0 = this.getDex(dexId0)
-    const dex1 = this.getDex(dexId1)
-    const tokensAddresses0 = new Set(Object.keys(dex0.tokenAddressToMetadata))
-    const tokensAddresses1 = new Set(Object.keys(dex1.tokenAddressToMetadata))
-
-    const commonTokenAddresses = new Set([...tokensAddresses0].filter(x => tokensAddresses1.has(x)))
-
-    const tokenAddressTokenMetadata = {}
-
-    commonTokenAddresses.forEach(tokenAddress => {
-      tokenAddressTokenMetadata[tokenAddress] = dex0.tokenAddressToMetadata[tokenAddress]
-    })
-
-    return tokenAddressTokenMetadata
+  async getERC20TokenBalanceOf(tokenAddress, accountAddress) {
+    try {
+      return this.getERC20TokenContract(tokenAddress).balanceOf(accountAddress)
+    }
+    catch (error) {
+      return null
+    }
   }
+
+  async getERC20TokenTotalSupply(tokenAddress) {
+    if (this.tokenAddressToTokenName[tokenAddress]) {
+      return this.tokenAddressToTokenName[tokenAddress]
+    }
+
+    try {
+      return this.tokenAddressToTokenName[tokenAddress] = await this.getERC20TokenContract(tokenAddress).totalSupply()
+    }
+    catch (error) {
+      return null
+    }
+  }
+
+  async getERC20TokenName(tokenAddress) {
+    if (this.tokenAddressToTokenName[tokenAddress]) {
+      return this.tokenAddressToTokenName[tokenAddress]
+    }
+
+    try {
+      return this.tokenAddressToTokenName[tokenAddress] = await this.getERC20TokenContract(tokenAddress).name()
+    }
+    catch (error) {
+      return null
+    }
+  }
+
+  async getERC20TokenSymbol(tokenAddress) {
+    if (this.tokenAddressToTokenSymbol[tokenAddress]) {
+      return this.tokenAddressToTokenSymbol[tokenAddress]
+    }
+
+    try {
+      return this.tokenAddressToTokenSymbol[tokenAddress] = await this.getERC20TokenContract(tokenAddress).symbol()
+    }
+    catch (error) {
+      return null
+    }
+  }
+
+  async getERC20TokenDecimals(tokenAddress) {
+    if (this.tokenAddressToTokenDecimals[tokenAddress]) {
+      return this.tokenAddressToTokenDecimals[tokenAddress]
+    }
+
+    try {
+      return this.tokenAddressToTokenDecimals[tokenAddress] = await this.getERC20TokenContract(tokenAddress).decimals()
+    }
+    catch (error) {
+      return null
+    }
+  }
+
+  // async getERC20TokenCreationBlockTime(tokenAddress) {
+  //   if (this.tokenAddressToTokenCreationBlockTime[tokenAddress]) {
+  //     return this.tokenAddressToTokenCreationBlockTime[tokenAddress]
+  //   }
+
+  //   try {
+  //     return this.tokenAddressToTokenCreationBlockTime[tokenAddress] = await this.provider.getTransactionReceipt('0x5579574f4da9f01f92a000910ed1a6caecac0c53358d69bf0dee798c22e466f3')
+  //   }
+  //   catch (error) {
+  //     console.log('error', error)
+  //     return null
+  //   }
+  // }
 
 }
 

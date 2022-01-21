@@ -15,6 +15,7 @@ class Dex {
     this.contractNameToContractMetadata = require(`blockchain-datasets/data/dexes/${dexId}/contracts/${this.dexters.blockchainId}.json`)
     this.stablecoinAddressToMetadata = require(`blockchain-datasets/data/dexes/${dexId}/stablecoins/${this.dexters.blockchainId}.json`)
     this.isUniswapV2 = this.metadata.contractTypeToContractName.factory === 'UniswapV2Factory'
+    this.type = this.isUniswapV2 ? 'uniswapv2' : ''
 
     // Contracts cache
     this.routerContract = null
@@ -172,7 +173,7 @@ class Dex {
           Object.assign(pairs, ...(await Promise.all(promises)))
         }
         catch (error) {
-          this.logError('Error getting all pairs on UniswapV2Factory)')
+          this.logError('Error getting all pairs on UniswapV2Factory')
           this.logError(error.message)
         }
       }

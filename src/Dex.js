@@ -260,6 +260,15 @@ class Dex {
     return () => unlisteners.forEach(unlistener => unlistener())
   }
 
+  // TODO handle non-UniswapV2Factory contracts
+  async addPairCreatedListener(callback) {
+    if (this.isUniswapV2) {
+      return this._addUniswapV2PairCreatedListener(callback)
+    }
+
+    throw new Error(`[Dexters|${this.dexters.blockchainId}|${this.dexId}] Unsupported factory contract type`)
+  }
+
   // TODO handle non-UniswapV2Pair contracts
   async addSyncListener(tokenAddress0OrPairAddress, tokenAddress1OrCallback, callback) {
     if (this.isUniswapV2) {
@@ -323,6 +332,30 @@ class Dex {
   /* ---
     INTERNAL LISTENERS
   --- */
+
+  async _addUniswapV2PairCreatedListener(callback) {
+    const factoryContract = this.getFactoryContract()
+
+    const listener = async (tokenAddress0, tokenAddress1, pairAddress, event) => {
+      try {
+        const block = await event.getBlock()
+
+        callback({
+          timestamp: block ? block.timestamp : null,
+          tokenAddress0,
+          tokenAddress1,
+          pairAddress,
+        })
+      }
+      catch (error) {
+        // Ignore
+      }
+    }
+
+    factoryContract.on('PairCreated', listener)
+
+    return () => factoryContract.off('PairCreated', listener)
+  }
 
   async _addUniswapV2PairSyncListener(pairAddress, callback) {
     const pairContract = this.getPairContract(pairAddress)
